@@ -13,8 +13,8 @@
  *   "Enriched" / "Skipped" / "Error" -> set by this script.
  */
 
-const BACKEND_URL = 'https://YOUR-RENDER-APP.onrender.com';
-const SHARED_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SECRET');
+const BACKEND_URL = 'https://lead-enrichment-tool.onrender.com';
+const SHARED_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SHARED_SECRET');
 const SHEET_NAME = 'Leads';
 
 const COL = {
@@ -28,7 +28,7 @@ const COL = {
 
 /* ---------- Triggers ---------- */
 
-function onEdit(e) {
+function handleEdit(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
   if (sheet.getName() !== SHEET_NAME) return;
@@ -66,9 +66,11 @@ function dailyBatch() {
 
   if (!queued.length) return;
 
-  // Chunk by 50 to fit one batch window.
-  for (let i = 0; i < queued.length; i += 50) {
-    const slice = queued.slice(i, i + 50);
+  warmUpBackend_();
+
+  const CHUNK = 10;
+  for (let i = 0; i < queued.length; i += CHUNK) {
+    const slice = queued.slice(i, i + CHUNK);
     slice.forEach(q => sheet.getRange(q.row, COL.status).setValue('Processing…'));
     try {
       const result = callBackend_('/enrich/batch', slice.map(q => q.lead));
@@ -131,6 +133,21 @@ function writeResult_(sheet, row, enriched) {
   }
 }
 
+function warmUpBackend_() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const resp = UrlFetchApp.fetch(BACKEND_URL + '/health', {
+        method: 'get',
+        muteHttpExceptions: true,
+      });
+      if (resp.getResponseCode() < 500) return;
+    } catch (err) {
+      // Cold-start fetch may exceed timeout; the dyno is waking — retry.
+    }
+    Utilities.sleep(2000);
+  }
+}
+
 function callBackend_(path, leads) {
   const body = JSON.stringify({ leads: leads });
   const sig = hmacHex_(SHARED_SECRET, body);
@@ -167,4 +184,12 @@ function installDailyTrigger() {
     .everyDays(1)
     .inTimezone('America/New_York')
     .create();
+}
+
+function installEditTrigger() {
+  const ss = SpreadsheetApp.getActive();
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'handleEdit') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('handleEdit').forSpreadsheet(ss).onEdit().create();
 }
