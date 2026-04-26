@@ -1,12 +1,12 @@
 """Three-stage enrichment funnel.
 
-  S1 (all leads): geocode + ACS + walkscore + derived signals -> Pre-Score
+  S1 (all leads): geocode + ACS + walkability + derived signals -> Pre-Score
   S2 (Pre-Score >= 50 AND corporate domain): Wikipedia + News
   S3 (Full Score >= 70): Gemini email draft
 
 Concurrency strategy:
   - Leads run in parallel under a semaphore (default 10).
-  - Within one lead, independent calls (e.g. ACS + WalkScore) run via asyncio.gather.
+  - Within one lead, independent calls (e.g. ACS + walkability) run via asyncio.gather.
   - Gemini pacing is enforced globally by the client (token-bucket lock).
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import time
 import httpx
 
 from . import cache, lead_brief, scoring
-from .clients import census_acs, census_geocoder, gemini, newsapi, walkscore, wikipedia
+from .clients import census_acs, census_geocoder, gemini, newsapi, walkability, wikipedia
 from .config import FULL_SCORE_S3_GATE, PRE_SCORE_S2_GATE
 from .models import BatchResponse, BatchSummary, EnrichedLead, LeadInput
 
@@ -36,7 +36,7 @@ async def _stage1(client: httpx.AsyncClient, lead: EnrichedLead) -> None:
 
     address_full = f"{lead.input.property_address}, {lead.input.city}, {lead.input.state}"
     census_task = census_acs.fetch_acs(client, geo)
-    walk_task = walkscore.fetch_walkscore(client, address_full, geo)
+    walk_task = walkability.fetch_walkability(client, address_full, geo)
     census_data, walk_data = await asyncio.gather(census_task, walk_task)
 
     lead.census = census_data

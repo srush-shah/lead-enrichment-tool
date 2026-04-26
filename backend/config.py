@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     census_api_key: str = ""
-    walkscore_api_key: str = ""
     newsapi_key: str = ""
     gemini_api_key: str = ""
 
@@ -130,9 +129,13 @@ FULL_SCORE_S3_GATE = 70      # need this to unlock Gemini drafting.
 # Free-tier budgets (batch reserves; onEdit gets the remainder).
 NEWSAPI_DAILY_CAP = 100
 NEWSAPI_BATCH_CEILING = 85
-GEMINI_DAILY_CAP = 1500
-GEMINI_BATCH_CEILING = 1300
-GEMINI_MIN_GAP_SECONDS = 4.5   # 15 RPM = one call every 4s; 4.5s adds headroom.
+# gemini-2.5-flash free tier is ~250 RPD / 10 RPM as of 2026-04. Some accounts
+# see tighter project-level caps (we observed `limit: 20` in a 429). Set the
+# daily cap to the documented value and a defensive 6.0s gap so the quota
+# gate actually trips before the API does.
+GEMINI_DAILY_CAP = 250
+GEMINI_BATCH_CEILING = 220
+GEMINI_MIN_GAP_SECONDS = 6.5  # 6.0s puts us right at the 10 RPM cap; 6.5s = 9.2 RPM gives jitter headroom
 
 # Tier thresholds for Full Score (only applied when MPS >= skip threshold).
 TIER_A_MIN = 80

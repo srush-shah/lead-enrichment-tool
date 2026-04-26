@@ -12,6 +12,9 @@ from ..quota import QuotaExhausted, QuotaSpec, release, reserve
 
 BASE = "https://newsapi.org/v2/everything"
 CACHE_TTL_HOURS = 6  # refresh news a few times per day
+# NewsAPI's free Developer plan only serves articles from the last ~30 days.
+# Asking for 90 returns HTTP 426 "parameterInvalid".
+LOOKBACK_DAYS = 29
 
 SPEC = QuotaSpec(
     api="newsapi",
@@ -23,7 +26,7 @@ SPEC = QuotaSpec(
 
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=3), reraise=True)
 async def _fetch(client: httpx.AsyncClient, query: str) -> dict:
-    since = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+    since = (datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     params = {
         "q": f'"{query}"',
         "from": since,

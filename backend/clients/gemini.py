@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from typing import Optional
@@ -8,6 +9,7 @@ from typing import Optional
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from .. import cache
 from ..config import (
     GEMINI_BATCH_CEILING,
     GEMINI_DAILY_CAP,
@@ -16,9 +18,14 @@ from ..config import (
 )
 from ..quota import QuotaExhausted, QuotaSpec, release, reserve
 
+# Cache prompt -> response by sha256(prompt). When the lead brief changes
+# (different news, different scoring) the prompt changes and the cache
+# auto-invalidates. 24h TTL keeps drafts fresh enough for outreach.
+GEMINI_CACHE_TTL_HOURS = 24
+
 ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-1.5-flash:generateContent"
+    "models/gemini-2.5-flash:generateContent"
 )
 
 SPEC = QuotaSpec(
@@ -51,7 +58,13 @@ async def _call(client: httpx.AsyncClient, prompt: str) -> str:
         params={"key": settings.gemini_api_key},
         json={
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.6, "maxOutputTokens": 512},
+            "generationConfig": {
+                "temperature": 0.6,
+                "maxOutputTokens": 512,
+                # 2.5 Flash enables "thinking" by default, which silently
+                # consumes the output budget and returns an empty body.
+                "thinkingConfig": {"thinkingBudget": 0},
+            },
         },
         timeout=30.0,
     )
@@ -71,6 +84,12 @@ async def generate(
 ) -> Optional[str]:
     if not settings.gemini_api_key:
         return None
+
+    cache_key = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    cached = cache.cache_get("gemini", cache_key)
+    if cached is not None:
+        return cached if isinstance(cached, str) else cached.get("text")
+
     try:
         reserve(SPEC, batch_mode=batch_mode)
     except QuotaExhausted:
@@ -78,10 +97,14 @@ async def generate(
 
     await _respect_rpm()
     try:
-        return await _call(client, prompt)
+        text = await _call(client, prompt)
     except Exception:
         release(SPEC)
         return None
+
+    if text:
+        cache.cache_set("gemini", cache_key, {"text": text}, GEMINI_CACHE_TTL_HOURS)
+    return text
 
 
 async def generate_json(

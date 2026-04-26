@@ -103,7 +103,7 @@ def _talking_point(lead: EnrichedLead) -> str:
     if c.median_gross_rent:
         bits.append(f"median rent ${c.median_gross_rent:,}")
     if w.walkscore:
-        bits.append(f"WalkScore {w.walkscore}")
+        bits.append(f"Walkability {w.walkscore}/100")
     if not bits:
         return f"Reference: {lead.input.company} manages property in {lead.input.city}, {lead.input.state}."
     return (
