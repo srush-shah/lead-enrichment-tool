@@ -31,6 +31,25 @@ CREATE TABLE IF NOT EXISTS daily_usage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_date ON daily_usage(usage_date);
+
+CREATE TABLE IF NOT EXISTS users (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    email       TEXT NOT NULL UNIQUE,
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS leads (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    lead_hash   TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    tier        TEXT NOT NULL,
+    score       REAL,
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_leads_user_created ON leads(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_leads_user_hash ON leads(user_id, lead_hash);
 """
 
 
@@ -119,3 +138,59 @@ def prune_old() -> None:
     with _conn() as c:
         c.execute("DELETE FROM daily_usage WHERE usage_date < ?", (cutoff,))
         c.execute("DELETE FROM api_cache WHERE expires_at < ?", (datetime.now(timezone.utc).isoformat(),))
+
+
+def upsert_user(email: str) -> int:
+    email = email.strip().lower()
+    with _conn() as c:
+        c.execute("INSERT OR IGNORE INTO users(email) VALUES(?)", (email,))
+        row = c.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+    return row["id"]
+
+
+def save_lead(
+    user_id: int,
+    lead_hash: str,
+    payload_json: str,
+    tier: str,
+    score: Optional[float],
+) -> int:
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO leads(user_id, lead_hash, payload, tier, score) VALUES(?,?,?,?,?)",
+            (user_id, lead_hash, payload_json, tier, score),
+        )
+        return cur.lastrowid
+
+
+def list_leads(user_id: int, limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT id, lead_hash, tier, score, created_at, payload
+               FROM leads WHERE user_id=?
+               ORDER BY created_at DESC, id DESC
+               LIMIT ? OFFSET ?""",
+            (user_id, limit, offset),
+        ).fetchall()
+        total = c.execute(
+            "SELECT COUNT(*) AS n FROM leads WHERE user_id=?", (user_id,)
+        ).fetchone()["n"]
+    return [dict(r) for r in rows], total
+
+
+def get_lead(user_id: int, lead_id: int) -> Optional[dict]:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT id, lead_hash, tier, score, created_at, payload FROM leads WHERE id=? AND user_id=?",
+            (lead_id, user_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_lead(lead_id: int, user_id: int, payload_json: str, tier: str, score: Optional[float]) -> bool:
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE leads SET payload=?, tier=?, score=? WHERE id=? AND user_id=?",
+            (payload_json, tier, score, lead_id, user_id),
+        )
+        return cur.rowcount > 0

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import AsyncIterator
 
 import httpx
 
@@ -102,6 +103,28 @@ async def run_batch(leads: list[LeadInput], batch_mode: bool = True) -> BatchRes
 
     summary = _summarize(enriched, time.monotonic() - started)
     return BatchResponse(leads=enriched, summary=summary)
+
+
+async def iter_batch(
+    leads: list[LeadInput],
+    batch_mode: bool = True,
+) -> AsyncIterator[EnrichedLead]:
+    """Streaming variant: yield each enriched lead as soon as it completes.
+
+    Same engine as run_batch -- shared semaphore, same per-lead pipeline.
+    Used by the SSE endpoint so the UI can render results progressively
+    instead of waiting for the whole batch.
+    """
+    cache.init_db()
+    sem = asyncio.Semaphore(CONCURRENCY)
+
+    async with httpx.AsyncClient(headers={"User-Agent": "EliseAI-GTM-Tool/1.0"}) as client:
+        tasks = [
+            asyncio.create_task(_process_lead(client, lead, batch_mode, sem))
+            for lead in leads
+        ]
+        for coro in asyncio.as_completed(tasks):
+            yield await coro
 
 
 def _summarize(leads: list[EnrichedLead], wall_time: float) -> BatchSummary:

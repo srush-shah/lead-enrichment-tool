@@ -9,13 +9,24 @@ import hashlib
 import hmac
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 
-from . import cache, orchestrator
+from . import api_v1, cache, orchestrator
 from .config import settings
 from .models import BatchRequest, BatchResponse
 
 
 app = FastAPI(title="EliseAI GTM Enrichment", version="1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Vercel prod URL added once deployed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(api_v1.router)
 
 
 @app.on_event("startup")

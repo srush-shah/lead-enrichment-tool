@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     cache_db_path: str = "./cache.db"
     log_level: str = "INFO"
 
+    # Web app session auth (Next.js -> backend).
+    nextauth_secret: str = "dev-nextauth-secret"
+    allowed_emails: str = ""  # comma-separated allowlist; empty = open for local dev
+
 
 settings = Settings()
 
