@@ -39,11 +39,14 @@ export function LeadResultCard({
   const [regenerating, setRegenerating] = useState(false);
   const [tone, setTone] = useState<Tone>("");
 
-  async function copyEmail() {
-    const text = `Subject: ${subject}\n\n${body}`;
+  async function copyField(value: string, label: string) {
+    if (!value) {
+      toast.error(`No ${label.toLowerCase()} to copy`);
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(text);
-      toast.success("Email copied to clipboard");
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
     } catch {
       toast.error("Copy failed — select and copy manually");
     }
@@ -153,9 +156,6 @@ export function LeadResultCard({
               <div className="flex items-center gap-1">
                 {!editing ? (
                   <>
-                    <Button size="xs" variant="ghost" onClick={copyEmail}>
-                      <CopyIcon /> Copy
-                    </Button>
                     <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>
                       <PencilIcon /> Edit
                     </Button>
@@ -203,34 +203,51 @@ export function LeadResultCard({
                 )}
               </div>
             </div>
-            {editing ? (
-              <div className="space-y-2">
-                <input
-                  className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Subject"
-                />
-                <textarea
-                  className="min-h-[180px] w-full rounded-md border border-input bg-background p-2.5 text-sm leading-relaxed outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                />
-              </div>
-            ) : (
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="text-xs text-muted-foreground">Subject</span>
-                  <p className="font-medium">{subject || <em className="text-muted-foreground">No subject</em>}</p>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Body</span>
+            <div className="space-y-3 text-sm">
+              <FieldRow
+                label="To"
+                onCopy={() => copyField(lead.input.email, "To")}
+              >
+                <p className="font-medium break-all">
+                  {lead.input.email || <em className="text-muted-foreground">No email</em>}
+                </p>
+              </FieldRow>
+
+              <FieldRow
+                label="Subject"
+                onCopy={() => copyField(subject, "Subject")}
+              >
+                {editing ? (
+                  <input
+                    className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Subject"
+                  />
+                ) : (
+                  <p className="font-medium">
+                    {subject || <em className="text-muted-foreground">No subject</em>}
+                  </p>
+                )}
+              </FieldRow>
+
+              <FieldRow
+                label="Body"
+                onCopy={() => copyField(body, "Body")}
+              >
+                {editing ? (
+                  <textarea
+                    className="min-h-[180px] w-full rounded-md border border-input bg-background p-2.5 text-sm leading-relaxed outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                  />
+                ) : (
                   <pre className="whitespace-pre-wrap font-sans leading-relaxed">
                     {body || <em className="text-muted-foreground">No body</em>}
                   </pre>
-                </div>
-              </div>
-            )}
+                )}
+              </FieldRow>
+            </div>
           </div>
         )}
 
@@ -258,6 +275,28 @@ export function LeadResultCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function FieldRow({
+  label,
+  onCopy,
+  children,
+}: {
+  label: string;
+  onCopy: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <Button size="xs" variant="ghost" onClick={onCopy}>
+          <CopyIcon /> Copy
+        </Button>
+      </div>
+      {children}
+    </div>
   );
 }
 
