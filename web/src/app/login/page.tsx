@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { WarmupBeacon } from "@/components/warmup-beacon";
 
 type SearchParams = Promise<{ callbackUrl?: string; error?: string }>;
 
@@ -15,6 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
 
   return (
     <main className="flex flex-1 items-center justify-center px-4">
+      <WarmupBeacon />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Sign in</CardTitle>

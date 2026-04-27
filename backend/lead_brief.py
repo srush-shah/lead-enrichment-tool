@@ -12,6 +12,7 @@ email drafting and for optional prose polish on the talking point.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
@@ -34,6 +35,40 @@ _TONE_INSTRUCTIONS: dict[str, str] = {
         "Address the contact by full name in the greeting."
     ),
 }
+
+
+# Local string-replacement rules for the no-Gemini fallback path. Lossy but
+# deterministic — runs when QuotaExhausted aborts a regenerate.
+_CASUAL_REPLACEMENTS: list[tuple[str, str]] = [
+    (
+        "Worth a 15-min intro next week? Happy to send times.",
+        "Open to a quick 15-min chat next week? I'll send some times.",
+    ),
+    ("Hi ", "Hey "),
+]
+
+_FORMAL_REPLACEMENTS: list[tuple[str, str]] = [
+    (
+        "Worth a 15-min intro next week? Happy to send times.",
+        "Would you be available for a 15-minute introduction next week? "
+        "I'd be glad to share several time options.",
+    ),
+    ("Hey ", "Hi "),
+]
+
+
+def apply_tone_template(
+    subject: str, body: str, tone: Optional[Tone],
+) -> tuple[str, str]:
+    if tone == "casual":
+        rules = _CASUAL_REPLACEMENTS
+    elif tone == "formal":
+        rules = _FORMAL_REPLACEMENTS
+    else:
+        return subject, body
+    for old, new in rules:
+        body = body.replace(old, new)
+    return subject, body
 
 
 def compose_brief(lead: EnrichedLead) -> LeadBrief:
@@ -208,6 +243,26 @@ async def draft_email(
         lead.draft_email_body = _fallback_body(lead)
 
 
+_LABEL_PREFIX_RE = re.compile(r"^(Trigger|Market Insight|Company Note)\s*:\s*")
+
+
+def _strip_brief_label(text: str) -> str:
+    return _LABEL_PREFIX_RE.sub("", text)
+
+
+def _property_specs(lead: EnrichedLead) -> str:
+    bits: list[str] = []
+    if lead.geo.zip_code:
+        bits.append(f"ZIP {lead.geo.zip_code}")
+    if lead.census.pct_5plus_units:
+        bits.append(f"{lead.census.pct_5plus_units:.0f}% in 5+ unit buildings")
+    if lead.walk.walkscore:
+        bits.append(f"WalkScore {lead.walk.walkscore}")
+    if lead.census.median_gross_rent:
+        bits.append(f"median rent ${lead.census.median_gross_rent:,}")
+    return " · ".join(bits)
+
+
 def _fallback_subject(lead: EnrichedLead) -> str:
     return f"Quick idea for {lead.input.company} in {lead.input.city}"
 
@@ -215,13 +270,14 @@ def _fallback_subject(lead: EnrichedLead) -> str:
 def _fallback_body(lead: EnrichedLead) -> str:
     brief = lead.brief
     first = lead.input.name.split()[0] if lead.input.name else "there"
-    anchor = brief.why_now if brief else f"Saw {lead.input.company} is active in {lead.input.city}."
-    talking = brief.talking_point if brief else ""
-    return (
-        f"Hi {first},\n\n"
-        f"{anchor} {talking}\n\n"
-        f"EliseAI's AI leasing agent handles 24/7 inbound inquiries and tour "
-        f"scheduling for multifamily operators — teams like yours typically "
-        f"reclaim 15+ hours per property per week.\n\n"
-        f"Worth a 15-min intro next week? Happy to send times."
+    raw_anchor = brief.why_now if brief else f"Saw {lead.input.company} is active in {lead.input.city}."
+    anchor = _strip_brief_label(raw_anchor)
+    pitch = (
+        "EliseAI's AI leasing agent handles 24/7 inbound inquiries and tour "
+        "scheduling for multifamily operators — teams like yours typically "
+        "reclaim 15+ hours per property per week."
     )
+    cta = "Worth a 15-min intro next week? Happy to send times."
+    specs = _property_specs(lead)
+    footer = f"\n\n---\nProperty specs: {specs}" if specs else ""
+    return f"Hi {first},\n\n{anchor}\n\n{pitch}\n\n{cta}{footer}"

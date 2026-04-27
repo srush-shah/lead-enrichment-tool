@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { QuotaChips } from "@/components/quota-chips";
+import { QuotaWarning } from "@/components/quota-warning";
 import { Button } from "@/components/ui/button";
 
 export default async function DashboardLayout({
@@ -39,7 +40,10 @@ export default async function DashboardLayout({
           </div>
         </div>
       </header>
-      <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">{children}</div>
+      <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-6">
+        <QuotaWarning />
+        {children}
+      </div>
     </div>
   );
 }

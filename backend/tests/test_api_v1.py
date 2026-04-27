@@ -193,3 +193,43 @@ def test_regenerate_rejects_invalid_tone(client, monkeypatch):
         headers=_bearer(),
     )
     assert r.status_code == 422
+
+
+def test_regenerate_falls_back_to_template_on_quota_exhausted(client, monkeypatch):
+    from backend.quota import QuotaExhausted
+
+    me = cache.upsert_user("sdr@example.com")
+    seed_body = (
+        "Hi Sarah,\n\nFoo.\n\n"
+        "Worth a 15-min intro next week? Happy to send times."
+    )
+    lid = _seed_lead(me, subject="OLD subj", body=seed_body)
+
+    async def boom(client, lead, batch_mode=True, tone=None, skip_cache=False):
+        raise QuotaExhausted("gemini", used=250, ceiling=250, reason="daily_cap_reached")
+
+    monkeypatch.setattr("backend.lead_brief.draft_email", boom)
+
+    r = client.post(
+        f"/api/v1/leads/{lid}/regenerate",
+        json={"tone": "casual"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers.get("X-Tone-Source") == "template"
+    body = r.json()["draft_email_body"]
+    # Casual rules: "Hi " -> "Hey " and the closer is rewritten.
+    assert "Hey Sarah," in body
+    assert "Open to a quick 15-min chat" in body
+    # Subject is left alone; existing subject persists.
+    assert r.json()["draft_email_subject"] == "OLD subj"
+
+
+def test_regenerate_marks_gemini_source_on_success(client, monkeypatch):
+    me = cache.upsert_user("sdr@example.com")
+    lid = _seed_lead(me)
+    _mock_draft(monkeypatch, [])
+
+    r = client.post(f"/api/v1/leads/{lid}/regenerate", json={}, headers=_bearer())
+    assert r.status_code == 200
+    assert r.headers.get("X-Tone-Source") == "gemini"

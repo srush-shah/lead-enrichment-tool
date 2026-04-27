@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
 import {
@@ -56,6 +56,44 @@ type SortDir = "asc" | "desc";
 
 type RowError = { lead: LeadInput; message: string };
 
+type BulkSnapshot = {
+  filename: string | null;
+  rows: LeadInput[];
+  results: EnrichedLead[];
+  errors: RowError[];
+  startedAt: number;
+  finishedAt: number | null;
+};
+
+const STORAGE_KEY = "bulk:lastUpload";
+
+function readSnapshot(): BulkSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as BulkSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeSnapshot(snap: BulkSnapshot): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snap));
+  } catch {
+    // Quota or disabled storage — silently skip; rehydrate is a nice-to-have.
+  }
+}
+
+function clearSnapshot(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export default function BulkUploadPage() {
   const [filename, setFilename] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -66,8 +104,47 @@ export default function BulkUploadPage() {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [dragOver, setDragOver] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
+  const [rehydrated, setRehydrated] = useState(false);
+  const startedAtRef = useRef<number | null>(null);
+  const finishedAtRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Rehydrate from localStorage on mount. Visible state (rows/results/errors)
+  // survives a navigation away; the in-flight stream itself does not.
+  useEffect(() => {
+    const snap = readSnapshot();
+    if (snap) {
+      setFilename(snap.filename);
+      setRows(snap.rows);
+      setResults(snap.results);
+      setErrors(snap.errors);
+      startedAtRef.current = snap.startedAt;
+      finishedAtRef.current = snap.finishedAt;
+      if (snap.finishedAt == null && (snap.results.length > 0 || snap.errors.length > 0)) {
+        setInterrupted(true);
+      }
+    }
+    setRehydrated(true);
+  }, []);
+
+  // Persist after every state change once rehydration is settled.
+  useEffect(() => {
+    if (!rehydrated) return;
+    if (!filename && rows.length === 0 && results.length === 0 && errors.length === 0) {
+      clearSnapshot();
+      return;
+    }
+    writeSnapshot({
+      filename,
+      rows,
+      results,
+      errors,
+      startedAt: startedAtRef.current ?? Date.now(),
+      finishedAt: finishedAtRef.current,
+    });
+  }, [rehydrated, filename, rows, results, errors, streaming]);
 
   const total = rows.length;
   const completed = results.length + errors.length;
@@ -99,6 +176,9 @@ export default function BulkUploadPage() {
     setRows([]);
     setResults([]);
     setErrors([]);
+    setInterrupted(false);
+    startedAtRef.current = null;
+    finishedAtRef.current = null;
 
     Papa.parse<Record<string, string>>(file, {
       header: true,
@@ -159,6 +239,10 @@ export default function BulkUploadPage() {
     setRows([]);
     setResults([]);
     setErrors([]);
+    setInterrupted(false);
+    startedAtRef.current = null;
+    finishedAtRef.current = null;
+    clearSnapshot();
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -167,6 +251,9 @@ export default function BulkUploadPage() {
     setStreaming(true);
     setResults([]);
     setErrors([]);
+    setInterrupted(false);
+    startedAtRef.current = Date.now();
+    finishedAtRef.current = null;
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -207,6 +294,7 @@ export default function BulkUploadPage() {
         }
         received += 1;
       }
+      finishedAtRef.current = Date.now();
       toast.success(`Enriched ${received} of ${rows.length} leads`);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -262,6 +350,24 @@ export default function BulkUploadPage() {
         </Link>
         <h1 className="text-xl font-semibold tracking-tight">Bulk upload</h1>
       </div>
+
+      {interrupted && (
+        <div className="flex items-start justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/30 dark:bg-amber-950/30 dark:text-amber-200">
+          <div>
+            Showing partial results from a previous upload that didn&apos;t finish.
+            The in-flight stream stopped when you navigated away — to keep going,
+            re-upload the remaining leads.
+          </div>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => setInterrupted(false)}
+            className="text-amber-900 hover:text-amber-950 dark:text-amber-200"
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardHeader className="border-b pb-3">

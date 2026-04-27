@@ -11,13 +11,14 @@ import json
 from typing import Literal, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import cache, lead_brief, orchestrator
 from .auth import CurrentUser, CurrentUserDep
 from .models import BatchRequest, EnrichedLead, LeadInput
+from .quota import QuotaExhausted
 
 
 class RegenerateRequest(BaseModel):
@@ -103,20 +104,37 @@ async def get_lead(lead_id: int, user: CurrentUser = CurrentUserDep) -> Enriched
 @router.post("/leads/{lead_id}/regenerate", response_model=EnrichedLead)
 async def regenerate_email(
     lead_id: int,
+    response: Response,
     req: RegenerateRequest = RegenerateRequest(),
     user: CurrentUser = CurrentUserDep,
 ) -> EnrichedLead:
     """Re-run the Gemini email draft only — keeps every other field on the
-    stored lead intact. Optional tone hint biases the prompt."""
+    stored lead intact. Optional tone hint biases the prompt.
+
+    If Gemini quota is exhausted, fall back to local string-replacement
+    tone shifts on the existing draft. Sets `X-Tone-Source: template`
+    so the caller can tell apart Gemini-fresh vs template-shifted output.
+    """
     row = cache.get_lead(user.id, lead_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="lead not found")
 
     enriched = EnrichedLead.model_validate_json(row["payload"])
+    response.headers["X-Tone-Source"] = "gemini"
     async with httpx.AsyncClient(headers={"User-Agent": "EliseAI-GTM-Tool/1.0"}) as client:
-        await lead_brief.draft_email(
-            client, enriched, batch_mode=False, tone=req.tone, skip_cache=True,
-        )
+        try:
+            await lead_brief.draft_email(
+                client, enriched, batch_mode=False, tone=req.tone, skip_cache=True,
+            )
+        except QuotaExhausted:
+            subject, body = lead_brief.apply_tone_template(
+                enriched.draft_email_subject or "",
+                enriched.draft_email_body or "",
+                req.tone,
+            )
+            enriched.draft_email_subject = subject
+            enriched.draft_email_body = body
+            response.headers["X-Tone-Source"] = "template"
 
     cache.update_lead(
         lead_id=lead_id,

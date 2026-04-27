@@ -135,6 +135,7 @@ def _summarize(leads: list[EnrichedLead], wall_time: float) -> BatchSummary:
         if l.brief and l.brief.why_now_source in ("market", "company", "none"):
             fallbacks += 1
 
+    from . import quota_store
     from .config import GEMINI_DAILY_CAP, NEWSAPI_DAILY_CAP
     return BatchSummary(
         total=len(leads),
@@ -143,9 +144,9 @@ def _summarize(leads: list[EnrichedLead], wall_time: float) -> BatchSummary:
         tier_c=tiers["C"],
         tier_d=tiers["D"],
         skipped=tiers["Skipped"],
-        news_calls_used=cache.usage_today("newsapi"),
+        news_calls_used=quota_store.usage_today("newsapi"),
         news_calls_cap=NEWSAPI_DAILY_CAP,
-        gemini_calls_used=cache.usage_today("gemini"),
+        gemini_calls_used=quota_store.usage_today("gemini"),
         wall_time_seconds=round(wall_time, 2),
         fallbacks_used=fallbacks,
     )

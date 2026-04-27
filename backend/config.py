@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Web app session auth (Next.js -> backend).
     nextauth_secret: str = "dev-nextauth-secret"
     allowed_emails: str = ""  # comma-separated allowlist; empty = open for local dev
+    # Comma-separated extra origins (e.g., the Vercel prod URL). localhost:3000 is always allowed.
+    extra_cors_origins: str = ""
+    # Postgres connection string for daily_usage persistence across Render cold
+    # starts. Empty = fall back to SQLite cache.db (dev/local).
+    database_url: str = ""
 
 
 settings = Settings()

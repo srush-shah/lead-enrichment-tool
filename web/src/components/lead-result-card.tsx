@@ -36,6 +36,8 @@ export function LeadResultCard({
   const [editing, setEditing] = useState(false);
   const [subject, setSubject] = useState(lead.draft_email_subject ?? "");
   const [body, setBody] = useState(lead.draft_email_body ?? "");
+  const [lastSavedSubject, setLastSavedSubject] = useState(lead.draft_email_subject ?? "");
+  const [lastSavedBody, setLastSavedBody] = useState(lead.draft_email_body ?? "");
   const [regenerating, setRegenerating] = useState(false);
   const [tone, setTone] = useState<Tone>("");
 
@@ -71,6 +73,8 @@ export function LeadResultCard({
       const next = (await res.json()) as EnrichedLead;
       setSubject(next.draft_email_subject ?? "");
       setBody(next.draft_email_body ?? "");
+      setLastSavedSubject(next.draft_email_subject ?? "");
+      setLastSavedBody(next.draft_email_body ?? "");
       onUpdate?.({ ...next, id: lead.id });
       toast.success(`Email redrafted${tone ? ` · ${tone}` : ""}`);
     } catch {
@@ -185,15 +189,23 @@ export function LeadResultCard({
                   </>
                 ) : (
                   <>
-                    <Button size="xs" variant="ghost" onClick={() => setEditing(false)}>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => {
+                        setLastSavedSubject(subject);
+                        setLastSavedBody(body);
+                        setEditing(false);
+                      }}
+                    >
                       <CheckIcon /> Done
                     </Button>
                     <Button
                       size="xs"
                       variant="ghost"
                       onClick={() => {
-                        setSubject(lead.draft_email_subject ?? "");
-                        setBody(lead.draft_email_body ?? "");
+                        setSubject(lastSavedSubject);
+                        setBody(lastSavedBody);
                         setEditing(false);
                       }}
                     >

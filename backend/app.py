@@ -11,16 +11,20 @@ import hmac
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import api_v1, cache, orchestrator
+from . import api_v1, cache, orchestrator, quota_store
 from .config import settings
 from .models import BatchRequest, BatchResponse
 
 
 app = FastAPI(title="EliseAI GTM Enrichment", version="1.0")
 
+_cors_origins = ["http://localhost:3000"] + [
+    o.strip() for o in settings.extra_cors_origins.split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Vercel prod URL added once deployed
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,8 +43,8 @@ def _startup() -> None:
 async def health() -> dict:
     return {
         "status": "ok",
-        "newsapi_used_today": cache.usage_today("newsapi"),
-        "gemini_used_today": cache.usage_today("gemini"),
+        "newsapi_used_today": quota_store.usage_today("newsapi"),
+        "gemini_used_today": quota_store.usage_today("gemini"),
     }
 
 
