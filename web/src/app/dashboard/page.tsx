@@ -26,7 +26,6 @@ export default function DashboardHome() {
           title="History"
           description="Past enrichments scoped to your account. Re-open or regenerate."
           href="/dashboard/history"
-          comingSoon
         />
       </div>
     </div>
@@ -37,12 +36,10 @@ function ShellCard({
   title,
   description,
   href,
-  comingSoon,
 }: {
   title: string;
   description: string;
   href: string;
-  comingSoon?: boolean;
 }) {
   return (
     <Link href={href} className="group">
@@ -50,9 +47,6 @@ function ShellCard({
         <CardHeader>
           <CardTitle className="text-base">{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
-          {comingSoon && (
-            <p className="text-xs text-muted-foreground">Ships in Step 5.</p>
-          )}
         </CardHeader>
       </Card>
     </Link>

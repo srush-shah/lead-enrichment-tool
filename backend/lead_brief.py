@@ -13,12 +13,27 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 import httpx
 
 from .clients import gemini
 from .models import EnrichedLead, LeadBrief
+
+
+Tone = Literal["casual", "formal"]
+
+
+_TONE_INSTRUCTIONS: dict[str, str] = {
+    "casual": (
+        "TONE OVERRIDE: Casual and conversational. First-name basis, "
+        "short sentences, contractions are fine. Skip corporate phrasing."
+    ),
+    "formal": (
+        "TONE OVERRIDE: Formal and respectful. Avoid contractions and idioms. "
+        "Address the contact by full name in the greeting."
+    ),
+}
 
 
 def compose_brief(lead: EnrichedLead) -> LeadBrief:
@@ -142,7 +157,7 @@ Return STRICT JSON with keys "subject" and "body". The body is plain text,
 """
 
 
-def _email_prompt(lead: EnrichedLead) -> str:
+def _email_prompt(lead: EnrichedLead, tone: Optional[Tone] = None) -> str:
     brief = lead.brief
     ctx = {
         "contact_name": lead.input.name,
@@ -164,8 +179,10 @@ def _email_prompt(lead: EnrichedLead) -> str:
         "walkscore": lead.walk.walkscore,
         "wiki_summary": lead.company.wiki_summary,
     }
+    tone_block = f"\n\n{_TONE_INSTRUCTIONS[tone]}" if tone in _TONE_INSTRUCTIONS else ""
     return (
         SYSTEM_PREFIX
+        + tone_block
         + "\n---\nLEAD BRIEF:\n"
         + json.dumps(ctx, default=str, indent=2)
         + "\n---\nReturn JSON only."
@@ -176,9 +193,13 @@ async def draft_email(
     client: httpx.AsyncClient,
     lead: EnrichedLead,
     batch_mode: bool = True,
+    tone: Optional[Tone] = None,
+    skip_cache: bool = False,
 ) -> None:
-    prompt = _email_prompt(lead)
-    parsed = await gemini.generate_json(client, prompt, batch_mode=batch_mode)
+    prompt = _email_prompt(lead, tone=tone)
+    parsed = await gemini.generate_json(
+        client, prompt, batch_mode=batch_mode, skip_cache=skip_cache,
+    )
     if parsed and "subject" in parsed and "body" in parsed:
         lead.draft_email_subject = str(parsed["subject"]).strip()
         lead.draft_email_body = str(parsed["body"]).strip()

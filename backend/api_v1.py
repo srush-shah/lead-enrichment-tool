@@ -8,13 +8,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Literal, Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
-from . import cache, orchestrator
+from . import cache, lead_brief, orchestrator
 from .auth import CurrentUser, CurrentUserDep
 from .models import BatchRequest, EnrichedLead, LeadInput
+
+
+class RegenerateRequest(BaseModel):
+    tone: Optional[Literal["casual", "formal"]] = None
 
 
 router = APIRouter(prefix="/api/v1", tags=["webapp"])
@@ -91,6 +98,34 @@ async def get_lead(lead_id: int, user: CurrentUser = CurrentUserDep) -> Enriched
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="lead not found")
     return EnrichedLead.model_validate_json(row["payload"])
+
+
+@router.post("/leads/{lead_id}/regenerate", response_model=EnrichedLead)
+async def regenerate_email(
+    lead_id: int,
+    req: RegenerateRequest = RegenerateRequest(),
+    user: CurrentUser = CurrentUserDep,
+) -> EnrichedLead:
+    """Re-run the Gemini email draft only — keeps every other field on the
+    stored lead intact. Optional tone hint biases the prompt."""
+    row = cache.get_lead(user.id, lead_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="lead not found")
+
+    enriched = EnrichedLead.model_validate_json(row["payload"])
+    async with httpx.AsyncClient(headers={"User-Agent": "EliseAI-GTM-Tool/1.0"}) as client:
+        await lead_brief.draft_email(
+            client, enriched, batch_mode=False, tone=req.tone, skip_cache=True,
+        )
+
+    cache.update_lead(
+        lead_id=lead_id,
+        user_id=user.id,
+        payload_json=enriched.model_dump_json(),
+        tier=enriched.tier,
+        score=enriched.score,
+    )
+    return enriched
 
 
 @router.get("/me")

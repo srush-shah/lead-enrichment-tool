@@ -101,3 +101,95 @@ def test_disallowed_email_blocked(client):
     bad = jwt.encode({"email": "denied@x.com", "exp": int(time.time()) + 3600}, SECRET, algorithm="HS256")
     r = client.get("/api/v1/me", headers={"Authorization": f"Bearer {bad}"})
     assert r.status_code == 403
+
+
+# ---- regenerate -------------------------------------------------------------
+
+
+def _seed_lead(user_id: int, *, subject: str = "OLD subj", body: str = "OLD body") -> int:
+    lead = {
+        "input": {
+            "name": "Sarah Chen", "email": "schen@greystar.com", "company": "Greystar",
+            "property_address": "1 Main", "city": "NYC", "state": "NY", "country": "USA",
+        },
+        "tier": "A", "score": 88.0,
+        "draft_email_subject": subject,
+        "draft_email_body": body,
+    }
+    return cache.save_lead(user_id, "h", json.dumps(lead), "A", 88.0)
+
+
+def _mock_draft(monkeypatch, calls: list[dict]):
+    async def fake(client, lead, batch_mode=True, tone=None, skip_cache=False):
+        calls.append({"tone": tone, "skip_cache": skip_cache, "batch_mode": batch_mode})
+        lead.draft_email_subject = f"NEW subj ({tone or 'default'})"
+        lead.draft_email_body = f"NEW body for {lead.input.company}"
+
+    monkeypatch.setattr("backend.lead_brief.draft_email", fake)
+
+
+def test_regenerate_requires_token(client):
+    r = client.post("/api/v1/leads/1/regenerate", json={})
+    assert r.status_code == 401
+
+
+def test_regenerate_404_for_other_users_lead(client, monkeypatch):
+    other = cache.upsert_user("rival@example.com")
+    lid = _seed_lead(other)
+    calls: list[dict] = []
+    _mock_draft(monkeypatch, calls)
+
+    r = client.post(f"/api/v1/leads/{lid}/regenerate", json={}, headers=_bearer())
+    assert r.status_code == 404
+    assert calls == []  # never reached the draft step
+
+
+def test_regenerate_default_tone(client, monkeypatch):
+    me = cache.upsert_user("sdr@example.com")
+    lid = _seed_lead(me)
+    calls: list[dict] = []
+    _mock_draft(monkeypatch, calls)
+
+    r = client.post(f"/api/v1/leads/{lid}/regenerate", json={}, headers=_bearer())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["draft_email_subject"] == "NEW subj (default)"
+    assert body["draft_email_body"] == "NEW body for Greystar"
+    # tier/score preserved
+    assert body["tier"] == "A"
+    assert body["score"] == 88.0
+    # draft_email called once with tone=None and skip_cache=True
+    assert calls == [{"tone": None, "skip_cache": True, "batch_mode": False}]
+
+    # Persisted: GET should now return the new draft.
+    r2 = client.get(f"/api/v1/leads/{lid}", headers=_bearer())
+    assert r2.json()["draft_email_subject"] == "NEW subj (default)"
+
+
+def test_regenerate_with_tone(client, monkeypatch):
+    me = cache.upsert_user("sdr@example.com")
+    lid = _seed_lead(me)
+    calls: list[dict] = []
+    _mock_draft(monkeypatch, calls)
+
+    r = client.post(
+        f"/api/v1/leads/{lid}/regenerate",
+        json={"tone": "casual"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["draft_email_subject"] == "NEW subj (casual)"
+    assert calls[0]["tone"] == "casual"
+
+
+def test_regenerate_rejects_invalid_tone(client, monkeypatch):
+    me = cache.upsert_user("sdr@example.com")
+    lid = _seed_lead(me)
+    _mock_draft(monkeypatch, [])
+
+    r = client.post(
+        f"/api/v1/leads/{lid}/regenerate",
+        json={"tone": "snarky"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 422

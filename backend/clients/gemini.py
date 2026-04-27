@@ -81,14 +81,16 @@ async def generate(
     client: httpx.AsyncClient,
     prompt: str,
     batch_mode: bool = True,
+    skip_cache: bool = False,
 ) -> Optional[str]:
     if not settings.gemini_api_key:
         return None
 
     cache_key = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-    cached = cache.cache_get("gemini", cache_key)
-    if cached is not None:
-        return cached if isinstance(cached, str) else cached.get("text")
+    if not skip_cache:
+        cached = cache.cache_get("gemini", cache_key)
+        if cached is not None:
+            return cached if isinstance(cached, str) else cached.get("text")
 
     try:
         reserve(SPEC, batch_mode=batch_mode)
@@ -111,9 +113,10 @@ async def generate_json(
     client: httpx.AsyncClient,
     prompt: str,
     batch_mode: bool = True,
+    skip_cache: bool = False,
 ) -> Optional[dict]:
     """Gemini doesn't support strict JSON mode on free tier; we parse defensively."""
-    text = await generate(client, prompt, batch_mode=batch_mode)
+    text = await generate(client, prompt, batch_mode=batch_mode, skip_cache=skip_cache)
     if not text:
         return None
     # Strip common markdown fences.

@@ -24,6 +24,8 @@ const TIER_VARIANT: Record<Tier, "default" | "secondary" | "outline" | "destruct
   Skipped: "destructive",
 };
 
+type Tone = "" | "casual" | "formal";
+
 export function LeadResultCard({
   lead,
   onUpdate,
@@ -35,6 +37,7 @@ export function LeadResultCard({
   const [subject, setSubject] = useState(lead.draft_email_subject ?? "");
   const [body, setBody] = useState(lead.draft_email_body ?? "");
   const [regenerating, setRegenerating] = useState(false);
+  const [tone, setTone] = useState<Tone>("");
 
   async function copyEmail() {
     const text = `Subject: ${subject}\n\n${body}`;
@@ -56,19 +59,17 @@ export function LeadResultCard({
       const res = await fetch(`/api/proxy/leads/${lead.id}/regenerate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(tone ? { tone } : {}),
       });
       if (!res.ok) {
-        const msg =
-          res.status === 404
-            ? "Regenerate ships in Step 5 — backend route not live yet."
-            : `Regenerate failed (${res.status})`;
-        toast.error(msg);
+        toast.error(`Regenerate failed (${res.status})`);
         return;
       }
       const next = (await res.json()) as EnrichedLead;
+      setSubject(next.draft_email_subject ?? "");
+      setBody(next.draft_email_body ?? "");
       onUpdate?.({ ...next, id: lead.id });
-      toast.success("Email redrafted");
+      toast.success(`Email redrafted${tone ? ` · ${tone}` : ""}`);
     } catch {
       toast.error("Network error during regenerate");
     } finally {
@@ -159,14 +160,27 @@ export function LeadResultCard({
                       <PencilIcon /> Edit
                     </Button>
                     {lead.id != null && (
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        onClick={regenerate}
-                        disabled={regenerating}
-                      >
-                        <RefreshCwIcon className={regenerating ? "animate-spin" : ""} /> Regenerate
-                      </Button>
+                      <>
+                        <select
+                          aria-label="Regenerate tone"
+                          value={tone}
+                          onChange={(e) => setTone(e.target.value as Tone)}
+                          disabled={regenerating}
+                          className="h-7 rounded-md border border-input bg-background px-1.5 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          <option value="">Default tone</option>
+                          <option value="casual">Casual</option>
+                          <option value="formal">Formal</option>
+                        </select>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={regenerate}
+                          disabled={regenerating}
+                        >
+                          <RefreshCwIcon className={regenerating ? "animate-spin" : ""} /> Regenerate
+                        </Button>
+                      </>
                     )}
                   </>
                 ) : (
