@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function DashboardHome() {
   return (
@@ -19,13 +19,14 @@ export default function DashboardHome() {
         />
         <ShellCard
           title="Bulk Upload"
-          description="Drop a CSV. Watch results stream in as each lead finishes."
+          description="Drop a CSV. Watch results stream in. Export CSV or copy as TSV."
           href="/dashboard/bulk"
         />
         <ShellCard
           title="History"
           description="Past enrichments scoped to your account. Re-open or regenerate."
           href="/dashboard/history"
+          comingSoon
         />
       </div>
     </div>
@@ -36,10 +37,12 @@ function ShellCard({
   title,
   description,
   href,
+  comingSoon,
 }: {
   title: string;
   description: string;
   href: string;
+  comingSoon?: boolean;
 }) {
   return (
     <Link href={href} className="group">
@@ -47,10 +50,10 @@ function ShellCard({
         <CardHeader>
           <CardTitle className="text-base">{title}</CardTitle>
           <CardDescription>{description}</CardDescription>
+          {comingSoon && (
+            <p className="text-xs text-muted-foreground">Ships in Step 5.</p>
+          )}
         </CardHeader>
-        <CardContent className="text-xs text-muted-foreground">
-          Coming up in Steps 3–5.
-        </CardContent>
       </Card>
     </Link>
   );
