@@ -16,3 +16,11 @@ cache.db
 docs/VIDEO_SCRIPT.md
 GTM Engineer Practical Assignment .pdf
 .plan/
+
+# Web app (Next.js)
+web/node_modules/
+web/.next/
+web/.vercel/
+web/.env*.local
+web/next-env.d.ts
+web/.turbo/
