@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Postgres connection string for daily_usage persistence across Render cold
     # starts. Empty = fall back to SQLite cache.db (dev/local).
     database_url: str = ""
+    # Deployed Apps Script web-app URL for push-to-sheet (Step 8). Empty
+    # disables the route — keep it that way until a deployment exists.
+    apps_script_push_url: str = ""
 
 
 settings = Settings()

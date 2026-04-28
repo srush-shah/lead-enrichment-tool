@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CopyIcon, PencilIcon, RefreshCwIcon, CheckIcon, XIcon, ExternalLinkIcon } from "lucide-react";
+import { CopyIcon, PencilIcon, RefreshCwIcon, CheckIcon, XIcon, ExternalLinkIcon, SendIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { pushLeadsToSheet } from "@/lib/push-to-sheet";
 import type { EnrichedLead, SubScores, Tier } from "@/lib/types";
 
 const SUB_SCORE_LABELS: Array<{ key: keyof SubScores; label: string }> = [
@@ -40,6 +41,7 @@ export function LeadResultCard({
   const [lastSavedBody, setLastSavedBody] = useState(lead.draft_email_body ?? "");
   const [regenerating, setRegenerating] = useState(false);
   const [tone, setTone] = useState<Tone>("");
+  const [pushing, setPushing] = useState(false);
 
   async function copyField(value: string, label: string) {
     if (!value) {
@@ -84,30 +86,54 @@ export function LeadResultCard({
     }
   }
 
+  async function pushToSheet() {
+    if (lead.id == null) return;
+    setPushing(true);
+    try {
+      await pushLeadsToSheet([lead.id]);
+    } finally {
+      setPushing(false);
+    }
+  }
+
   const tierVariant = TIER_VARIANT[lead.tier];
   const score = lead.score != null ? Math.round(lead.score) : null;
 
   return (
     <Card>
       <CardHeader className="border-b pb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-lg">
-            {lead.input.name}
-            <span className="text-muted-foreground font-normal"> — {lead.input.company}</span>
-          </CardTitle>
-          <Badge variant={tierVariant} className="font-mono">
-            Tier {lead.tier}
-          </Badge>
-          {score != null && (
-            <Badge variant="outline" className="font-mono">
-              Score {score}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-lg">
+              {lead.input.name}
+              <span className="text-muted-foreground font-normal"> — {lead.input.company}</span>
+            </CardTitle>
+            <Badge variant={tierVariant} className="font-mono">
+              Tier {lead.tier}
             </Badge>
-          )}
-          {lead.msa && (
-            <Badge variant="ghost" className="font-mono">
-              {lead.msa}
-              {lead.in_top25_msa ? " · top-25" : ""}
-            </Badge>
+            {score != null && (
+              <Badge variant="outline" className="font-mono">
+                Score {score}
+              </Badge>
+            )}
+            {lead.msa && (
+              <Badge variant="ghost" className="font-mono">
+                {lead.msa}
+                {lead.in_top25_msa ? " · top-25" : ""}
+              </Badge>
+            )}
+          </div>
+          {lead.id != null && (
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={pushToSheet}
+              disabled={pushing}
+              className="shrink-0"
+            >
+              <SendIcon className={pushing ? "animate-pulse" : ""} />
+              {pushing ? "Pushing…" : "Push to Sheet"}
+            </Button>
           )}
         </div>
         <p className="text-xs text-muted-foreground">

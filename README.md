@@ -80,6 +80,25 @@ secret.
 5. Run `installDailyTrigger()` once to register the 9 AM cron.
 6. The `onEdit` trigger auto-fires when an SDR sets `Status=Ready` on a row.
 
+### Optional: web-app push-to-sheet (Step 8)
+
+The web app can push enriched rows back into the same spreadsheet via
+the `doPost` handler in `Code.gs`. To enable it:
+
+1. In Apps Script editor: Deploy → New deployment → type **Web app**.
+   Execute as: **Me**. Who has access: **Anyone with the link**.
+2. Copy the resulting `https://script.google.com/macros/s/.../exec` URL.
+3. Set `APPS_SCRIPT_PUSH_URL` on the FastAPI backend env (Render or
+   `.env`).
+4. (Optional) Set `NEXT_PUBLIC_PILOT_SHEET_URL` on Vercel to the sheet's
+   public URL — the post-push toast offers a one-click "Open sheet"
+   link.
+5. The handler verifies HMAC-SHA256 over the raw body using the same
+   `WEBHOOK_SHARED_SECRET`; signature is passed as `?sig=...` because
+   Apps Script `doPost` can't read custom headers.
+6. Rows land on a `Web App Output` tab (auto-created on first push) so
+   the SDR's primary `Leads` tab stays clean.
+
 ## Running tests
 
 ```bash

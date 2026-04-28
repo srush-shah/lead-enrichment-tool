@@ -15,14 +15,20 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import cache, lead_brief, orchestrator
+from . import cache, cli, lead_brief, orchestrator
 from .auth import CurrentUser, CurrentUserDep
+from .clients import sheets_push
 from .models import BatchRequest, EnrichedLead, LeadInput
 from .quota import QuotaExhausted
 
 
 class RegenerateRequest(BaseModel):
     tone: Optional[Literal["casual", "formal"]] = None
+
+
+class PushToSheetRequest(BaseModel):
+    lead_ids: list[int]
+    sheet_name: Optional[str] = None  # default "Web App Output" lives in sheets_push
 
 
 router = APIRouter(prefix="/api/v1", tags=["webapp"])
@@ -49,20 +55,29 @@ def _persist(user: CurrentUser, enriched: EnrichedLead) -> int:
     )
 
 
-@router.post("/enrich", response_model=EnrichedLead)
-async def enrich_one(lead: LeadInput, user: CurrentUser = CurrentUserDep) -> EnrichedLead:
+def _enriched_with_id(enriched: EnrichedLead, lead_id: int) -> dict:
+    """Serialize an EnrichedLead to JSON-safe dict with the cache id attached.
+    Used by the streaming + single endpoints so the frontend can push the
+    lead to Sheets without a second round-trip to look up the id."""
+    data = enriched.model_dump(mode="json")
+    data["id"] = lead_id
+    return data
+
+
+@router.post("/enrich")
+async def enrich_one(lead: LeadInput, user: CurrentUser = CurrentUserDep) -> dict:
     result = await orchestrator.run_batch([lead], batch_mode=False)
     enriched = result.leads[0]
-    _persist(user, enriched)
-    return enriched
+    lead_id = _persist(user, enriched)
+    return _enriched_with_id(enriched, lead_id)
 
 
 @router.post("/enrich/stream")
 async def enrich_stream(req: BatchRequest, user: CurrentUser = CurrentUserDep) -> StreamingResponse:
     async def event_source():
         async for enriched in orchestrator.iter_batch(req.leads, batch_mode=True):
-            _persist(user, enriched)
-            payload = enriched.model_dump_json()
+            lead_id = _persist(user, enriched)
+            payload = json.dumps(_enriched_with_id(enriched, lead_id))
             yield f"event: lead\ndata: {payload}\n\n"
         yield "event: done\ndata: {}\n\n"
 
@@ -144,6 +159,51 @@ async def regenerate_email(
         score=enriched.score,
     )
     return enriched
+
+
+@router.post("/leads/push-to-sheet")
+async def push_to_sheet(
+    req: PushToSheetRequest,
+    user: CurrentUser = CurrentUserDep,
+) -> dict:
+    """Append the user's selected enriched leads to the configured Apps
+    Script-fronted Google Sheet.
+
+    Lead IDs that don't belong to the current user are silently skipped
+    (mirrors the 404 behavior of GET /leads/{id}). Column order matches
+    the CLI's CSV output so a Sheets row reads the same as a CSV row.
+    """
+    if not req.lead_ids:
+        raise HTTPException(status_code=400, detail="lead_ids is empty")
+
+    rows: list[list] = []
+    skipped: list[int] = []
+    for lead_id in req.lead_ids:
+        row = cache.get_lead(user.id, lead_id)
+        if row is None:
+            skipped.append(lead_id)
+            continue
+        enriched = EnrichedLead.model_validate_json(row["payload"])
+        flat = cli._row_for(enriched)
+        rows.append([flat.get(col) for col in cli.COLUMNS])
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="no leads found for current user")
+
+    try:
+        result = await sheets_push.push_rows(
+            header=list(cli.COLUMNS),
+            rows=rows,
+            sheet_name=req.sheet_name or "Web App Output",
+        )
+    except sheets_push.SheetsPushError as e:
+        raise HTTPException(status_code=502, detail=f"sheets push failed: {e}") from e
+
+    return {
+        "written": result.get("written", len(rows)),
+        "sheet": result.get("sheet"),
+        "skipped": skipped,
+    }
 
 
 @router.get("/me")

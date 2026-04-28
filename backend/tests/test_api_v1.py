@@ -233,3 +233,147 @@ def test_regenerate_marks_gemini_source_on_success(client, monkeypatch):
     r = client.post(f"/api/v1/leads/{lid}/regenerate", json={}, headers=_bearer())
     assert r.status_code == 200
     assert r.headers.get("X-Tone-Source") == "gemini"
+
+
+# ---- push-to-sheet ---------------------------------------------------------
+
+
+def _seed_full_lead(user_id: int, *, company: str = "Greystar") -> int:
+    """Save a payload with all the fields cli._row_for / EnrichedLead need."""
+    payload = {
+        "input": {
+            "name": "Sarah Chen", "email": "schen@greystar.com", "company": company,
+            "property_address": "1 Main", "city": "NYC", "state": "NY", "country": "USA",
+        },
+        "tier": "A", "score": 88.0,
+        "msa": "New York-Newark-Jersey City", "in_top25_msa": True,
+        "corporate_domain": True,
+        "draft_email_subject": "subj", "draft_email_body": "body",
+        "brief": {
+            "why_now": "news-driven trigger",
+            "why_now_source": "news",
+            "talking_point": "ResMan integration",
+            "objection_preempt": None,
+            "evidence_links": ["https://example.com/a", "https://example.com/b"],
+        },
+    }
+    return cache.save_lead(user_id, "h", json.dumps(payload), "A", 88.0)
+
+
+def test_push_to_sheet_requires_token(client):
+    r = client.post("/api/v1/leads/push-to-sheet", json={"lead_ids": [1]})
+    assert r.status_code == 401
+
+
+def test_push_to_sheet_rejects_disallowed_email(client):
+    bad = jwt.encode({"email": "denied@x.com", "exp": int(time.time()) + 3600}, SECRET, algorithm="HS256")
+    r = client.post(
+        "/api/v1/leads/push-to-sheet",
+        json={"lead_ids": [1]},
+        headers={"Authorization": f"Bearer {bad}"},
+    )
+    assert r.status_code == 403
+
+
+def test_push_to_sheet_400_on_empty_lead_ids(client):
+    r = client.post("/api/v1/leads/push-to-sheet", json={"lead_ids": []}, headers=_bearer())
+    assert r.status_code == 400
+
+
+def test_push_to_sheet_404_when_no_leads_belong_to_user(client, monkeypatch):
+    # Seed a lead belonging to a *different* user — current user should see 404.
+    other = cache.upsert_user("rival@example.com")
+    other_lid = _seed_full_lead(other)
+
+    captured: list[dict] = []
+
+    async def fake_push(header, rows, *, sheet_name="Web App Output", timeout=30.0):
+        captured.append({"header": header, "rows": rows, "sheet_name": sheet_name})
+        return {"written": len(rows), "sheet": sheet_name}
+
+    monkeypatch.setattr("backend.clients.sheets_push.push_rows", fake_push)
+
+    r = client.post(
+        "/api/v1/leads/push-to-sheet",
+        json={"lead_ids": [other_lid]},
+        headers=_bearer(),
+    )
+    assert r.status_code == 404
+    assert captured == []  # never invoked
+
+
+def test_push_to_sheet_sends_cli_column_order_and_persists(client, monkeypatch):
+    from backend import cli
+
+    me = cache.upsert_user("sdr@example.com")
+    lid = _seed_full_lead(me, company="Greystar")
+
+    captured: list[dict] = []
+
+    async def fake_push(header, rows, *, sheet_name="Web App Output", timeout=30.0):
+        captured.append({"header": header, "rows": rows, "sheet_name": sheet_name})
+        return {"written": len(rows), "sheet": sheet_name}
+
+    monkeypatch.setattr("backend.clients.sheets_push.push_rows", fake_push)
+
+    r = client.post(
+        "/api/v1/leads/push-to-sheet",
+        json={"lead_ids": [lid]},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["written"] == 1
+    assert body["sheet"] == "Web App Output"
+    assert body["skipped"] == []
+
+    # Header is exactly cli.COLUMNS, in order — keeps CSV/Sheet rows aligned.
+    assert captured[0]["header"] == list(cli.COLUMNS)
+    row = captured[0]["rows"][0]
+    assert len(row) == len(cli.COLUMNS)
+    # Spot-check that the right value sits at the right column index.
+    idx_company = cli.COLUMNS.index("company")
+    idx_tier = cli.COLUMNS.index("tier")
+    idx_evidence = cli.COLUMNS.index("evidence_links")
+    assert row[idx_company] == "Greystar"
+    assert row[idx_tier] == "A"
+    # cli._row_for joins evidence_links with " | "
+    assert row[idx_evidence] == "https://example.com/a | https://example.com/b"
+
+
+def test_push_to_sheet_skipped_lists_other_users_ids(client, monkeypatch):
+    me = cache.upsert_user("sdr@example.com")
+    other = cache.upsert_user("rival@example.com")
+    mine = _seed_full_lead(me)
+    theirs = _seed_full_lead(other)
+
+    async def fake_push(header, rows, *, sheet_name="Web App Output", timeout=30.0):
+        return {"written": len(rows), "sheet": sheet_name}
+
+    monkeypatch.setattr("backend.clients.sheets_push.push_rows", fake_push)
+
+    r = client.post(
+        "/api/v1/leads/push-to-sheet",
+        json={"lead_ids": [mine, theirs, 99999]},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["written"] == 1
+    assert sorted(body["skipped"]) == sorted([theirs, 99999])
+
+
+def test_push_to_sheet_502_when_apps_script_url_missing(client, monkeypatch):
+    me = cache.upsert_user("sdr@example.com")
+    lid = _seed_full_lead(me)
+    # Don't monkeypatch push_rows — let the real client run with empty URL,
+    # which raises SheetsPushError -> 502.
+    monkeypatch.setattr("backend.clients.sheets_push.settings.apps_script_push_url", "")
+
+    r = client.post(
+        "/api/v1/leads/push-to-sheet",
+        json={"lead_ids": [lid]},
+        headers=_bearer(),
+    )
+    assert r.status_code == 502
+    assert "APPS_SCRIPT_PUSH_URL" in r.json()["detail"]

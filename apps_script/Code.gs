@@ -16,6 +16,7 @@
 const BACKEND_URL = 'https://lead-enrichment-tool.onrender.com';
 const SHARED_SECRET = PropertiesService.getScriptProperties().getProperty('WEBHOOK_SHARED_SECRET');
 const SHEET_NAME = 'Leads';
+const PUSH_SHEET_DEFAULT = 'Web App Output';
 
 const COL = {
   name: 1, email: 2, company: 3, property_address: 4, city: 5, state: 6, country: 7,
@@ -79,6 +80,94 @@ function dailyBatch() {
       slice.forEach(q => sheet.getRange(q.row, COL.status).setValue('Error: ' + err.message));
     }
   }
+}
+
+/* ---------- Web app push endpoint ---------- */
+
+/**
+ * HMAC-signed inbound writes from the FastAPI backend (web app -> sheet).
+ *
+ * Why query-string signature: Apps Script's doPost(e) does NOT expose
+ * request headers, only the body (e.postData) and URL params (e.parameter).
+ * So the standard pattern is HMAC-SHA256 over the raw body, with the
+ * hex digest passed as ?sig=... on the URL. Backend (sheets_push.py)
+ * mirrors this.
+ *
+ * Body shape:
+ *   { sheet_name?: "Web App Output",
+ *     header: ["col1", "col2", ...],
+ *     rows:   [["v1", "v2", ...], ...] }
+ *
+ * Returns: { written: N, sheet: "<name>" } or { error: "..." } on failure.
+ */
+function doPost(e) {
+  try {
+    if (!e || !e.postData || typeof e.postData.contents !== 'string') {
+      return _jsonResponse_({ error: 'missing body' });
+    }
+    const raw = e.postData.contents;
+    const sig = (e.parameter && e.parameter.sig) || '';
+    if (!_verifySignature_(raw, sig)) {
+      return _jsonResponse_({ error: 'invalid signature' });
+    }
+
+    const payload = JSON.parse(raw);
+    const header = payload.header;
+    const rows = payload.rows;
+    if (!Array.isArray(header) || !Array.isArray(rows)) {
+      return _jsonResponse_({ error: 'header and rows arrays are required' });
+    }
+    if (rows.length === 0) {
+      return _jsonResponse_({ written: 0, sheet: payload.sheet_name || PUSH_SHEET_DEFAULT });
+    }
+
+    const ss = SpreadsheetApp.getActive();
+    const sheetName = String(payload.sheet_name || PUSH_SHEET_DEFAULT);
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      sheet.getRange(1, 1, 1, header.length).setValues([header]);
+      sheet.getRange(1, 1, 1, header.length).setFontWeight('bold');
+      sheet.setFrozenRows(1);
+    } else if (sheet.getLastRow() === 0) {
+      sheet.getRange(1, 1, 1, header.length).setValues([header]);
+      sheet.getRange(1, 1, 1, header.length).setFontWeight('bold');
+      sheet.setFrozenRows(1);
+    }
+
+    const width = header.length;
+    const normalized = rows.map(function (r) {
+      const out = new Array(width);
+      for (let i = 0; i < width; i++) {
+        out[i] = (i < r.length && r[i] != null) ? r[i] : '';
+      }
+      return out;
+    });
+    const startRow = sheet.getLastRow() + 1;
+    sheet.getRange(startRow, 1, normalized.length, width).setValues(normalized);
+    return _jsonResponse_({ written: normalized.length, sheet: sheetName });
+  } catch (err) {
+    return _jsonResponse_({ error: 'doPost failed: ' + (err && err.message ? err.message : String(err)) });
+  }
+}
+
+function _verifySignature_(rawBody, providedHex) {
+  if (!SHARED_SECRET || !providedHex) return false;
+  const expected = hmacHex_(SHARED_SECRET, rawBody);
+  // Constant-time-ish compare via byte-by-byte; Apps Script lacks
+  // crypto.timingSafeEqual but the small fixed length keeps this fine.
+  if (expected.length !== providedHex.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < expected.length; i++) {
+    mismatch |= expected.charCodeAt(i) ^ providedHex.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function _jsonResponse_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 /* ---------- Helpers ---------- */

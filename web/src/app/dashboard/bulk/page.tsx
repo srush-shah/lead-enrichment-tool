@@ -9,12 +9,14 @@ import {
   ClipboardCopyIcon,
   DownloadIcon,
   FileSpreadsheetIcon,
+  SendIcon,
   SparklesIcon,
   TrashIcon,
   UploadIcon,
   XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { pushLeadsToSheet } from "@/lib/push-to-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,6 +103,7 @@ export default function BulkUploadPage() {
   const [streaming, setStreaming] = useState(false);
   const [results, setResults] = useState<EnrichedLead[]>([]);
   const [errors, setErrors] = useState<RowError[]>([]);
+  const [pushing, setPushing] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [dragOver, setDragOver] = useState(false);
@@ -329,6 +332,22 @@ export default function BulkUploadPage() {
     }
   }
 
+  async function pushToSheet() {
+    const ids = results.map((r) => r.id).filter((id): id is number => typeof id === "number");
+    if (ids.length === 0) return;
+    setPushing(true);
+    try {
+      await pushLeadsToSheet(ids);
+    } finally {
+      setPushing(false);
+    }
+  }
+
+  const pushableCount = results.reduce(
+    (n, r) => (typeof r.id === "number" ? n + 1 : n),
+    0,
+  );
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -484,6 +503,15 @@ export default function BulkUploadPage() {
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={copyTsv} disabled={results.length === 0}>
                 <ClipboardCopyIcon /> Copy as TSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={pushToSheet}
+                disabled={pushableCount === 0 || pushing}
+              >
+                <SendIcon className={pushing ? "animate-pulse" : ""} />
+                {pushing ? "Pushing…" : "Push to Sheet"}
               </Button>
               <Button size="sm" onClick={exportCsv} disabled={results.length === 0}>
                 <DownloadIcon /> Export CSV
