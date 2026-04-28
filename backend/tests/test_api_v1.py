@@ -28,6 +28,8 @@ def client(monkeypatch):
     monkeypatch.setattr("backend.cache.settings.cache_db_path", tmp.name)
     monkeypatch.setattr("backend.config.settings.nextauth_secret", SECRET)
     monkeypatch.setattr("backend.config.settings.allowed_emails", "sdr@example.com")
+    # Force the SQLite branch in lead_store regardless of leaked dev env.
+    monkeypatch.setattr("backend.config.settings.database_url", "")
     cache.init_db()
     from backend.app import app
     yield TestClient(app)
@@ -199,11 +201,13 @@ def test_regenerate_falls_back_to_template_on_quota_exhausted(client, monkeypatc
     from backend.quota import QuotaExhausted
 
     me = cache.upsert_user("sdr@example.com")
-    seed_body = (
-        "Hi Sarah,\n\nFoo.\n\n"
-        "Worth a 15-min intro next week? Happy to send times."
+    # Seed with a Gemini-shaped body that doesn't match any tone heuristic
+    # the old apply_tone_template relied on. The new render_template_email
+    # path rebuilds from scratch, so this still produces a tone-correct draft.
+    lid = _seed_lead(
+        me, subject="OLD subj",
+        body="Greetings Sarah, our platform increases lease velocity. Let me know.",
     )
-    lid = _seed_lead(me, subject="OLD subj", body=seed_body)
 
     async def boom(client, lead, batch_mode=True, tone=None, skip_cache=False):
         raise QuotaExhausted("gemini", used=250, ceiling=250, reason="daily_cap_reached")
@@ -218,11 +222,40 @@ def test_regenerate_falls_back_to_template_on_quota_exhausted(client, monkeypatc
     assert r.status_code == 200, r.text
     assert r.headers.get("X-Tone-Source") == "template"
     body = r.json()["draft_email_body"]
-    # Casual rules: "Hi " -> "Hey " and the closer is rewritten.
+    # Body is rebuilt from scratch, not patched — so it works regardless
+    # of whether the prior body came from Gemini or _fallback_body.
     assert "Hey Sarah," in body
-    assert "Open to a quick 15-min chat" in body
-    # Subject is left alone; existing subject persists.
-    assert r.json()["draft_email_subject"] == "OLD subj"
+    assert "Open to a 15-min chat" in body
+    # Subject is also tone-shifted away from the seeded "OLD subj".
+    subj = r.json()["draft_email_subject"]
+    assert subj != "OLD subj"
+    assert "Greystar" in subj
+
+
+def test_regenerate_template_formal_rebuilds_body(client, monkeypatch):
+    """Same path as the casual test but for tone=formal — proves the
+    rebuild works for both presets and that subject changes too."""
+    from backend.quota import QuotaExhausted
+
+    me = cache.upsert_user("sdr@example.com")
+    lid = _seed_lead(me, subject="OLD subj", body="anything at all")
+
+    async def boom(client, lead, batch_mode=True, tone=None, skip_cache=False):
+        raise QuotaExhausted("gemini", used=250, ceiling=250, reason="daily_cap_reached")
+
+    monkeypatch.setattr("backend.lead_brief.draft_email", boom)
+
+    r = client.post(
+        f"/api/v1/leads/{lid}/regenerate",
+        json={"tone": "formal"},
+        headers=_bearer(),
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers.get("X-Tone-Source") == "template"
+    body = r.json()["draft_email_body"]
+    assert "Dear Sarah Chen," in body
+    assert "Would you be available for a 15-minute introduction" in body
+    assert r.json()["draft_email_subject"].startswith("Introduction")
 
 
 def test_regenerate_marks_gemini_source_on_success(client, monkeypatch):

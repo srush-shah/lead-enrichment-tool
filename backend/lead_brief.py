@@ -37,38 +37,35 @@ _TONE_INSTRUCTIONS: dict[str, str] = {
 }
 
 
-# Local string-replacement rules for the no-Gemini fallback path. Lossy but
-# deterministic — runs when QuotaExhausted aborts a regenerate.
-_CASUAL_REPLACEMENTS: list[tuple[str, str]] = [
-    (
-        "Worth a 15-min intro next week? Happy to send times.",
-        "Open to a quick 15-min chat next week? I'll send some times.",
-    ),
-    ("Hi ", "Hey "),
-]
+# Tone-aware presets for the no-Gemini fallback path. Used by
+# render_template_email below — runs when QuotaExhausted aborts a
+# regenerate, OR when Gemini returns a malformed response. Produces a
+# deterministic, fully-rebuilt draft so the user sees a clearly different
+# email after every regenerate, regardless of what was there before.
 
-_FORMAL_REPLACEMENTS: list[tuple[str, str]] = [
-    (
-        "Worth a 15-min intro next week? Happy to send times.",
-        "Would you be available for a 15-minute introduction next week? "
-        "I'd be glad to share several time options.",
-    ),
-    ("Hey ", "Hi "),
-]
+_PITCH_DEFAULT = (
+    "EliseAI's AI leasing agent handles 24/7 inbound inquiries and tour "
+    "scheduling for multifamily operators — teams like yours typically "
+    "reclaim 15+ hours per property per week."
+)
+_PITCH_CASUAL = (
+    "Quick context — EliseAI's AI leasing agent handles 24/7 inbound "
+    "inquiries and tour scheduling. Teams like yours usually claw back "
+    "15+ hours per property per week."
+)
+_PITCH_FORMAL = (
+    "EliseAI provides an AI leasing platform that addresses inbound "
+    "inquiries and tour scheduling around the clock for multifamily "
+    "operators. Comparable organizations typically recover in excess of "
+    "15 hours per property per week."
+)
 
-
-def apply_tone_template(
-    subject: str, body: str, tone: Optional[Tone],
-) -> tuple[str, str]:
-    if tone == "casual":
-        rules = _CASUAL_REPLACEMENTS
-    elif tone == "formal":
-        rules = _FORMAL_REPLACEMENTS
-    else:
-        return subject, body
-    for old, new in rules:
-        body = body.replace(old, new)
-    return subject, body
+_CTA_DEFAULT = "Worth a 15-min intro next week? Happy to send times."
+_CTA_CASUAL = "Open to a 15-min chat next week? Happy to send a few times."
+_CTA_FORMAL = (
+    "Would you be available for a 15-minute introduction next week? "
+    "I would be glad to share several time options."
+)
 
 
 def compose_brief(lead: EnrichedLead) -> LeadBrief:
@@ -239,8 +236,9 @@ async def draft_email(
         lead.draft_email_subject = str(parsed["subject"]).strip()
         lead.draft_email_body = str(parsed["body"]).strip()
     else:
-        lead.draft_email_subject = _fallback_subject(lead)
-        lead.draft_email_body = _fallback_body(lead)
+        subject, body = render_template_email(lead, tone=tone)
+        lead.draft_email_subject = subject
+        lead.draft_email_body = body
 
 
 _LABEL_PREFIX_RE = re.compile(r"^(Trigger|Market Insight|Company Note)\s*:\s*")
@@ -267,17 +265,37 @@ def _fallback_subject(lead: EnrichedLead) -> str:
     return f"Quick idea for {lead.input.company} in {lead.input.city}"
 
 
-def _fallback_body(lead: EnrichedLead) -> str:
+def render_template_email(
+    lead: EnrichedLead, tone: Optional[Tone] = None,
+) -> tuple[str, str]:
+    """Build a fresh subject + body from the deterministic brief, biased
+    by tone. Used whenever Gemini is unavailable (quota exhausted or
+    malformed response) so the user always sees a tone-correct draft."""
     brief = lead.brief
     first = lead.input.name.split()[0] if lead.input.name else "there"
-    raw_anchor = brief.why_now if brief else f"Saw {lead.input.company} is active in {lead.input.city}."
-    anchor = _strip_brief_label(raw_anchor)
-    pitch = (
-        "EliseAI's AI leasing agent handles 24/7 inbound inquiries and tour "
-        "scheduling for multifamily operators — teams like yours typically "
-        "reclaim 15+ hours per property per week."
+    full = lead.input.name or "there"
+    raw_anchor = (
+        brief.why_now if brief
+        else f"Saw {lead.input.company} is active in {lead.input.city}."
     )
-    cta = "Worth a 15-min intro next week? Happy to send times."
+    anchor = _strip_brief_label(raw_anchor)
     specs = _property_specs(lead)
     footer = f"\n\n---\nProperty specs: {specs}" if specs else ""
-    return f"Hi {first},\n\n{anchor}\n\n{pitch}\n\n{cta}{footer}"
+
+    if tone == "casual":
+        greeting, pitch, cta = f"Hey {first},", _PITCH_CASUAL, _CTA_CASUAL
+        subject = f"Quick idea for {lead.input.company}"
+    elif tone == "formal":
+        greeting, pitch, cta = f"Dear {full},", _PITCH_FORMAL, _CTA_FORMAL
+        subject = f"Introduction — EliseAI for {lead.input.company}"
+    else:
+        greeting, pitch, cta = f"Hi {first},", _PITCH_DEFAULT, _CTA_DEFAULT
+        subject = _fallback_subject(lead)
+
+    body = f"{greeting}\n\n{anchor}\n\n{pitch}\n\n{cta}{footer}"
+    return subject, body
+
+
+def _fallback_body(lead: EnrichedLead) -> str:
+    _, body = render_template_email(lead, tone=None)
+    return body

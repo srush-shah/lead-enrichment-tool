@@ -17,7 +17,7 @@ from typing import Optional
 import jwt
 from fastapi import Depends, Header, HTTPException, status
 
-from . import cache
+from . import lead_store
 from .config import settings
 
 
@@ -59,7 +59,7 @@ def current_user(authorization: str = Header(default="")) -> CurrentUser:
     if allowed is not None and email not in allowed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="email not allowed")
 
-    user_id = cache.upsert_user(email)
+    user_id = lead_store.upsert_user(email)
     return CurrentUser(id=user_id, email=email)
 
 

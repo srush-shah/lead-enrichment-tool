@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import cache, lead_brief, orchestrator
+from . import lead_brief, lead_store, orchestrator
 from .auth import CurrentUser, CurrentUserDep
 from .models import BatchRequest, EnrichedLead, LeadInput
 from .quota import QuotaExhausted
@@ -40,7 +40,7 @@ def _lead_hash(lead: LeadInput) -> str:
 
 
 def _persist(user: CurrentUser, enriched: EnrichedLead) -> int:
-    return cache.save_lead(
+    return lead_store.save_lead(
         user_id=user.id,
         lead_hash=_lead_hash(enriched.input),
         payload_json=enriched.model_dump_json(),
@@ -79,7 +79,7 @@ async def list_leads(
     offset: int = Query(0, ge=0),
     user: CurrentUser = CurrentUserDep,
 ) -> dict:
-    rows, total = cache.list_leads(user.id, limit=limit, offset=offset)
+    rows, total = lead_store.list_leads(user.id, limit=limit, offset=offset)
     summaries = [
         {
             "id": r["id"],
@@ -95,7 +95,7 @@ async def list_leads(
 
 @router.get("/leads/{lead_id}", response_model=EnrichedLead)
 async def get_lead(lead_id: int, user: CurrentUser = CurrentUserDep) -> EnrichedLead:
-    row = cache.get_lead(user.id, lead_id)
+    row = lead_store.get_lead(user.id, lead_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="lead not found")
     return EnrichedLead.model_validate_json(row["payload"])
@@ -111,11 +111,11 @@ async def regenerate_email(
     """Re-run the Gemini email draft only — keeps every other field on the
     stored lead intact. Optional tone hint biases the prompt.
 
-    If Gemini quota is exhausted, fall back to local string-replacement
-    tone shifts on the existing draft. Sets `X-Tone-Source: template`
-    so the caller can tell apart Gemini-fresh vs template-shifted output.
+    If Gemini quota is exhausted, rebuild the draft from a deterministic
+    tone-aware template instead. Sets `X-Tone-Source: template` so the
+    caller can tell Gemini-fresh apart from template-rendered output.
     """
-    row = cache.get_lead(user.id, lead_id)
+    row = lead_store.get_lead(user.id, lead_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="lead not found")
 
@@ -127,16 +127,12 @@ async def regenerate_email(
                 client, enriched, batch_mode=False, tone=req.tone, skip_cache=True,
             )
         except QuotaExhausted:
-            subject, body = lead_brief.apply_tone_template(
-                enriched.draft_email_subject or "",
-                enriched.draft_email_body or "",
-                req.tone,
-            )
+            subject, body = lead_brief.render_template_email(enriched, req.tone)
             enriched.draft_email_subject = subject
             enriched.draft_email_body = body
             response.headers["X-Tone-Source"] = "template"
 
-    cache.update_lead(
+    lead_store.update_lead(
         lead_id=lead_id,
         user_id=user.id,
         payload_json=enriched.model_dump_json(),

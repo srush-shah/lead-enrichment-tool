@@ -5,7 +5,7 @@ from backend.lead_brief import (
     _fallback_subject,
     _property_specs,
     _strip_brief_label,
-    apply_tone_template,
+    render_template_email,
 )
 from backend.models import (
     CensusData,
@@ -95,22 +95,29 @@ def test_fallback_subject_is_clean():
     assert "Greystar" in subject
 
 
-def test_apply_tone_template_casual_swaps_closer():
-    body = "Hi Sarah,\n\nFoo.\n\nWorth a 15-min intro next week? Happy to send times."
-    _, new_body = apply_tone_template("subj", body, "casual")
-    assert "Hey Sarah," in new_body
-    assert "Open to a quick 15-min chat" in new_body
+def test_render_template_email_casual_rebuilds_from_scratch():
+    """Casual template ignores any prior body and emits a fresh draft —
+    so it works even when the previous body was a Gemini-generated email
+    that doesn't match any string-replacement heuristic."""
+    subject, body = render_template_email(_make_lead(), "casual")
+    assert "Hey Sarah," in body
+    assert "Open to a 15-min chat" in body
+    # Subject is also tone-shifted, not preserved.
+    assert "Greystar" in subject
 
 
-def test_apply_tone_template_formal_swaps_closer():
-    body = "Hey Sarah,\n\nFoo.\n\nWorth a 15-min intro next week? Happy to send times."
-    _, new_body = apply_tone_template("subj", body, "formal")
-    assert "Hi Sarah," in new_body
-    assert "Would you be available for a 15-minute introduction" in new_body
+def test_render_template_email_formal_rebuilds_from_scratch():
+    subject, body = render_template_email(_make_lead(), "formal")
+    assert "Dear Sarah Chen," in body
+    assert "Would you be available for a 15-minute introduction" in body
+    assert subject.startswith("Introduction")
 
 
-def test_apply_tone_template_default_is_noop():
-    body = "Hi Sarah,\n\nFoo."
-    new_subject, new_body = apply_tone_template("subj", body, None)
-    assert new_subject == "subj"
-    assert new_body == body
+def test_render_template_email_default_matches_fallback_body():
+    """tone=None must match _fallback_body so existing callers (Gemini
+    parse failure) get the same default draft as before."""
+    lead = _make_lead()
+    subject, body = render_template_email(lead, None)
+    assert subject == _fallback_subject(lead)
+    assert body == _fallback_body(lead)
+    assert "Hi Sarah," in body
