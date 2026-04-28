@@ -61,11 +61,16 @@ Apps Script bridge.
 
 ## Phased Rollout (10-week plan)
 
+> The engine, Sheets bridge, and web app are already built (this take-home).
+> The 10-week plan below is what it takes to turn that working tool into a
+> production deployment for a specific customer — discovery, customer-data
+> integration, backtest-driven weight tuning, and the actual SDR rollout.
+
 | Week | Phase | Deliverable |
 |---|---|---|
 | **1** | Discovery | Stakeholder interviews, ICP doc, metric baseline |
-| **2–3** | Build | Backend + Sheet integration; dogfood CSV with 20 sample leads |
-| **4** | Internal QA | Backtest + side-by-side; tune weights |
+| **2–3** | Customer integration & weight tuning | Deploy backend + web app to customer infra; point ingest at their CRM / lead source; backfill last 90 days of their inbound for the backtest; adjust scoring weights or MSA list if their ICP differs from the take-home assumptions in `docs/ASSUMPTIONS.md` |
+| **4** | Internal QA | Backtest + side-by-side blind review on the customer's real lead data; finalize weights |
 | **5** | Dogfood | SDR Manager runs daily on real inbound for 1 week |
 | **6–7** | **Pilot (Phase 1: Sheets)** | 2 SDRs use the Sheets bridge live; 2 control SDRs continue manual; measure reply-rate delta |
 | **8** | Iterate | Scoring/email refinements from pilot feedback; web app QA on staging |
