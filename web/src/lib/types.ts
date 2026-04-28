@@ -48,9 +48,6 @@ export type EnrichedLead = {
   draft_email_subject: string | null;
   draft_email_body: string | null;
   enriched_at: string;
-  // Server-assigned cache id; present on /enrich + SSE-streamed leads so
-  // the UI can push them to Sheets without a separate lookup.
-  id?: number;
   news?: { articles: NewsArticle[] };
   company?: { wiki_url?: string | null; has_wikipedia?: boolean };
 };
