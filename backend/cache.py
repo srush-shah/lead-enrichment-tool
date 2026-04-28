@@ -6,8 +6,26 @@ import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterator, Optional
+from zoneinfo import ZoneInfo
 
 from .config import settings
+
+
+_QUOTA_RESET_TZ = {
+    "newsapi": timezone.utc,
+    "gemini": ZoneInfo("America/Los_Angeles"),
+}
+
+
+def reset_date(api_name: str) -> date:
+    """Return today's date in the API provider's quota-reset timezone.
+
+    Why: external quotas reset on their own clock (NewsAPI at 00:00 UTC,
+    Gemini at 00:00 Pacific), so keying our counter row to that same
+    clock makes it auto-zero when the upstream window flips.
+    """
+    tz = _QUOTA_RESET_TZ.get(api_name, timezone.utc)
+    return datetime.now(tz).date()
 
 
 _lock = threading.Lock()
@@ -100,13 +118,13 @@ def usage_today(api_name: str) -> int:
     with _conn() as c:
         row = c.execute(
             "SELECT call_count FROM daily_usage WHERE api_name=? AND usage_date=?",
-            (api_name, _today().isoformat()),
+            (api_name, reset_date(api_name).isoformat()),
         ).fetchone()
     return row["call_count"] if row else 0
 
 
 def increment_usage(api_name: str) -> int:
-    today = _today().isoformat()
+    today = reset_date(api_name).isoformat()
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as c:
         c.execute(
@@ -124,7 +142,7 @@ def increment_usage(api_name: str) -> int:
 
 
 def decrement_usage(api_name: str) -> None:
-    today = _today().isoformat()
+    today = reset_date(api_name).isoformat()
     with _conn() as c:
         c.execute(
             """UPDATE daily_usage SET call_count = MAX(0, call_count - 1)

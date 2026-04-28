@@ -62,7 +62,7 @@ def _pg_conn() -> Iterator["object"]:
 def usage_today(api_name: str) -> int:
     if not _use_pg():
         return cache.usage_today(api_name)
-    today = datetime.now(timezone.utc).date()
+    today = cache.reset_date(api_name)
     with _pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -76,7 +76,7 @@ def usage_today(api_name: str) -> int:
 def increment_usage(api_name: str) -> int:
     if not _use_pg():
         return cache.increment_usage(api_name)
-    today = datetime.now(timezone.utc).date()
+    today = cache.reset_date(api_name)
     now = datetime.now(timezone.utc)
     with _pg_conn() as conn:
         with conn.cursor() as cur:
@@ -97,13 +97,37 @@ def decrement_usage(api_name: str) -> None:
     if not _use_pg():
         cache.decrement_usage(api_name)
         return
-    today = datetime.now(timezone.utc).date()
+    today = cache.reset_date(api_name)
     with _pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """UPDATE daily_usage
                    SET call_count = GREATEST(0, call_count - 1)
                    WHERE api_name=%s AND usage_date=%s""",
+                (api_name, today),
+            )
+
+
+def clear_today(api_name: str) -> None:
+    """Delete today's counter row for `api_name` so usage resets to 0.
+
+    Used by the admin `reset` command when external quota has refreshed
+    but our local row is still pinned (e.g., the 429 self-heal pinned
+    the counter and we want immediate relief without waiting for the
+    next reset window).
+    """
+    today = cache.reset_date(api_name)
+    if not _use_pg():
+        with cache._conn() as c:  # noqa: SLF001 — internal helper, same package.
+            c.execute(
+                "DELETE FROM daily_usage WHERE api_name=? AND usage_date=?",
+                (api_name, today.isoformat()),
+            )
+        return
+    with _pg_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM daily_usage WHERE api_name=%s AND usage_date=%s",
                 (api_name, today),
             )
 
@@ -116,7 +140,8 @@ def set_usage(api_name: str, count: int) -> None:
     calls gate locally without burning more probe requests) and by the
     admin CLI's `mark-exhausted` command.
     """
-    today = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    today = cache.reset_date(api_name)
     if not _use_pg():
         with cache._conn() as c:  # noqa: SLF001 — internal helper, same package.
             c.execute(
@@ -125,7 +150,7 @@ def set_usage(api_name: str, count: int) -> None:
                    ON CONFLICT(api_name, usage_date)
                    DO UPDATE SET call_count = excluded.call_count,
                                  last_called = excluded.last_called""",
-                (api_name, today.date().isoformat(), count, today.isoformat()),
+                (api_name, today.isoformat(), count, now.isoformat()),
             )
         return
     with _pg_conn() as conn:
@@ -136,5 +161,5 @@ def set_usage(api_name: str, count: int) -> None:
                    ON CONFLICT (api_name, usage_date)
                    DO UPDATE SET call_count = EXCLUDED.call_count,
                                  last_called = EXCLUDED.last_called""",
-                (api_name, today.date(), count, today),
+                (api_name, today, count, now),
             )

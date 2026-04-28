@@ -41,6 +41,12 @@ def main() -> None:
     )
     show.add_argument("api", choices=list(CAPS))
 
+    reset = sub.add_parser(
+        "reset",
+        help="Delete today's counter row so usage_today returns 0 immediately.",
+    )
+    reset.add_argument("api", choices=list(CAPS))
+
     args = ap.parse_args()
 
     if args.cmd == "mark-exhausted":
@@ -50,6 +56,9 @@ def main() -> None:
     elif args.cmd == "show":
         used = quota_store.usage_today(args.api)
         print(f"{args.api}: {used}/{CAPS[args.api]}")
+    elif args.cmd == "reset":
+        quota_store.clear_today(args.api)
+        print(f"{args.api}: usage_today cleared to 0", file=sys.stderr)
     else:
         ap.print_help()
         sys.exit(2)
