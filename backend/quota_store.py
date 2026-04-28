@@ -106,3 +106,35 @@ def decrement_usage(api_name: str) -> None:
                    WHERE api_name=%s AND usage_date=%s""",
                 (api_name, today),
             )
+
+
+def set_usage(api_name: str, count: int) -> None:
+    """Pin today's counter to a specific value.
+
+    Used by the upstream-429 self-heal path (when Gemini/NewsAPI report
+    quota exhaustion, we sync the local counter to its cap so subsequent
+    calls gate locally without burning more probe requests) and by the
+    admin CLI's `mark-exhausted` command.
+    """
+    today = datetime.now(timezone.utc)
+    if not _use_pg():
+        with cache._conn() as c:  # noqa: SLF001 — internal helper, same package.
+            c.execute(
+                """INSERT INTO daily_usage(api_name, usage_date, call_count, last_called)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(api_name, usage_date)
+                   DO UPDATE SET call_count = excluded.call_count,
+                                 last_called = excluded.last_called""",
+                (api_name, today.date().isoformat(), count, today.isoformat()),
+            )
+        return
+    with _pg_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO daily_usage(api_name, usage_date, call_count, last_called)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (api_name, usage_date)
+                   DO UPDATE SET call_count = EXCLUDED.call_count,
+                                 last_called = EXCLUDED.last_called""",
+                (api_name, today.date(), count, today),
+            )

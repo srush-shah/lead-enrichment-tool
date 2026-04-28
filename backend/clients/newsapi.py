@@ -3,12 +3,18 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from .. import cache
+from .. import cache, quota_store
 from ..config import NEWSAPI_BATCH_CEILING, NEWSAPI_DAILY_CAP, settings
 from ..models import NewsArticle, NewsData
 from ..quota import QuotaExhausted, QuotaSpec, release, reserve
+
+
+def _retry_unless_429(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        return False
+    return True
 
 BASE = "https://newsapi.org/v2/everything"
 CACHE_TTL_HOURS = 6  # refresh news a few times per day
@@ -24,7 +30,12 @@ SPEC = QuotaSpec(
 )
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=3), reraise=True)
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+    retry=retry_if_exception(_retry_unless_429),
+    reraise=True,
+)
 async def _fetch(client: httpx.AsyncClient, query: str) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     params = {
@@ -60,6 +71,12 @@ async def fetch_news(
 
     try:
         data = await _fetch(client, company)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            quota_store.set_usage(SPEC.api, SPEC.hard_cap)
+            return NewsData(skipped_reason="daily_cap_reached")
+        release(SPEC)
+        return NewsData(skipped_reason="api_error")
     except Exception:
         release(SPEC)  # don't burn budget on transport errors
         return NewsData(skipped_reason="api_error")

@@ -7,9 +7,9 @@ import time
 from typing import Optional
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from .. import cache
+from .. import cache, quota_store
 from ..config import (
     GEMINI_BATCH_CEILING,
     GEMINI_DAILY_CAP,
@@ -17,6 +17,13 @@ from ..config import (
     settings,
 )
 from ..quota import QuotaExhausted, QuotaSpec, release, reserve
+
+
+def _retry_unless_429(exc: BaseException) -> bool:
+    """Don't burn the retry budget on a quota-exhausted response."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        return False
+    return True
 
 # Cache prompt -> response by sha256(prompt). When the lead brief changes
 # (different news, different scoring) the prompt changes and the cache
@@ -51,7 +58,12 @@ async def _respect_rpm() -> None:
         _last_call_ts = time.monotonic()
 
 
-@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=4), reraise=True)
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    retry=retry_if_exception(_retry_unless_429),
+    reraise=True,
+)
 async def _call(client: httpx.AsyncClient, prompt: str) -> str:
     r = await client.post(
         ENDPOINT,
@@ -100,6 +112,16 @@ async def generate(
     await _respect_rpm()
     try:
         text = await _call(client, prompt)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            # External quota dry — pin the local counter to the cap so the
+            # rest of today's calls gate locally and short-circuit to
+            # fallbacks. The reservation we just made stays counted: that
+            # probe call did fire.
+            quota_store.set_usage(SPEC.api, SPEC.hard_cap)
+        else:
+            release(SPEC)
+        return None
     except Exception:
         release(SPEC)
         return None
