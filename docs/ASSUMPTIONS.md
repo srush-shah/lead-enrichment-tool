@@ -96,3 +96,20 @@ Every Tier A/B lead is guaranteed a non-empty "Why Now". Priority order:
 2. **Market-Fit anchor**: `Market Insight: {ZIP} has {renter%}% renter density and ${median_rent} median rent — top-decile automation ROI territory for EliseAI.`
 3. **Company fallback**: `Company Note: {first sentence of Wikipedia summary}.`
 4. **None** (rare): `No fresh trigger found — treat as cold outreach.`
+
+---
+
+## Deployment / Access Assumptions (assessment scope)
+
+The seven scoring assumptions above are the commercial bets. The five
+below are scope decisions for the take-home itself — demo-scoped, not
+production-grade, but each is structured so the path to a real
+multi-tenant deploy is config + a sign-up flow, not a rewrite.
+
+| # | Assumption | Why this is OK for v1 | What changes in production |
+|---|---|---|---|
+| **D1** | **Single demo user** during the assessment. | Reviewers need a frictionless login, not a tenancy story. | `users` and `leads` tables are already `user_id`-keyed (`idx_leads_user_created`, `idx_leads_user_hash`); a real deploy adds sign-up + invite flows on top. |
+| **D2** | **Google OAuth + email allowlist** (`ALLOWED_EMAILS`) gates both the Auth.js `signIn` callback and the backend JWT verifier — belt and suspenders. | Prevents random Google accounts from burning the demo's free-tier quota. Reviewers see an "unverified app" interstitial because the OAuth consent screen stays in Testing mode. | Publish the OAuth consent screen; replace the allowlist with an org-domain check or SSO. |
+| **D3** | **Per-user private history** in the web app — no team views, no sharing. | One demo user means there's nothing to share. | Add a `team_id` column or row-level visibility rules; UI gets a "shared by" filter. |
+| **D4** | **CSV / TSV export is the v1 writeback path** from the web app; Sheets writeback is queued as Step 8 (Path B: HMAC-signed Apps Script `doPost` → dedicated `Web App Output` tab). | Lets the web app ship even if the Apps Script side isn't redeployed. The pilot SDRs already on Sheets keep using `onEdit` — no collision with web-app users. | Step 8 lands; "Push to Sheet" button writes to a separate tab so the pilot's `Leads` tab stays clean. |
+| **D5** | **Frontend has no automated tests.** Backend has 36 covering the engine, scoring, quota, and auth. | A manual smoke pass before recording covers the demo path; doubling the frontend budget for marginal demo value didn't pencil. | Vitest + Playwright before the first real customer — smoke tests for the BFF route handlers (auth, JWT minting, SSE proxy) take priority. |

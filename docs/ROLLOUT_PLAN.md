@@ -1,5 +1,26 @@
 # Rollout Plan — Sales Org Deployment
 
+## Two-Surface Architecture
+
+Same scoring engine, two SDR-facing surfaces — chosen so the rollout
+doesn't disrupt anyone already living in Google Sheets:
+
+| Surface | Who uses it | Phase |
+|---|---|---|
+| **Sheets bridge** — Apps Script `onEdit` → `/enrich/realtime` + nightly `/enrich/batch` | Pilot SDRs already running their pipeline in a shared sheet | Phase 1 (pilot, weeks 5–8) |
+| **Web app** — Next.js + Google OAuth, single-lead form + bulk CSV + history + per-lead regenerate | New SDRs, managers, anyone outside the pilot sheet | Phase 2 (org rollout, week 9+) |
+
+Both surfaces hit the same FastAPI backend (`/enrich/*` HMAC routes for
+Apps Script, `/api/v1/*` JWT routes for the web app). Same scoring
+weights, same "Why Now" fallback chain, same `daily_usage` quota
+counters — adding the web app didn't fork any business logic, and
+SDRs on the Sheets bridge keep their workflow untouched. The web app
+exports CSV/TSV today; a "Push to Sheet" button (Path B: HMAC-signed
+Apps Script `doPost` → dedicated `Web App Output` tab) is on deck so
+both surfaces can land in the same shared sheet without colliding.
+
+---
+
 ## Stakeholders & Roles
 
 | Role | Why involved |
@@ -45,10 +66,10 @@
 | **2–3** | Build | Backend + Sheet integration; dogfood CSV with 20 sample leads |
 | **4** | Internal QA | Backtest + side-by-side; tune weights |
 | **5** | Dogfood | SDR Manager runs daily on real inbound for 1 week |
-| **6–7** | **Pilot** | 2 SDRs use it live; 2 control SDRs continue manual; measure reply-rate delta |
-| **8** | Iterate | Scoring/email refinements from pilot feedback |
-| **9** | **Org rollout** | All SDRs onboarded; 30-min training + Loom walkthrough; office hours |
-| **10+** | Optimize & extend | Weekly metrics review; Salesforce/HubSpot trigger integration |
+| **6–7** | **Pilot (Phase 1: Sheets)** | 2 SDRs use the Sheets bridge live; 2 control SDRs continue manual; measure reply-rate delta |
+| **8** | Iterate | Scoring/email refinements from pilot feedback; web app QA on staging |
+| **9** | **Org rollout (Phase 2: web app)** | New SDRs + managers onboard via the web app; pilot SDRs stay on the Sheets bridge they already trust. 30-min training + Loom walkthrough; office hours |
+| **10+** | Optimize & extend | Weekly metrics review; Salesforce/HubSpot trigger integration; Push-to-Sheet button so web-app users can land in the shared sheet |
 
 ---
 
