@@ -75,8 +75,8 @@ audit the filter; nothing is silently dropped.
 | Resource | Free cap | Worst-case batch use | Reserved for onEdit | Headroom |
 |---|---|---|---|---|
 | NewsAPI | 100/day | 30 (S2 only, ~30 leads clear gate) | 15 | 55% buffer |
-| Gemini 2.5 Flash RPM | 10/min (free tier) | Paced at 6.5s gap → ~9 RPM | — | 10% buffer |
-| Gemini 2.5 Flash RPD | 250/day (free tier observed) | ~18 (S3 leads × 1 call for email) | 30 | 88% buffer |
+| Gemini 3.1 Flash Lite RPM | 15/min (free tier) | Paced at 4.5s gap → ~13 RPM | — | 13% buffer |
+| Gemini 3.1 Flash Lite RPD | 500/day (free tier) | ~18 (S3 leads × 1 call for email) | 60 | 88% buffer |
 | WalkScore | 5,000/day | 50 | — | negligible |
 | Census ACS | generous + 30d cache | ~20 uncached | — | negligible |
 | Census Geocoder | no official cap | 50 | — | negligible |

@@ -32,7 +32,7 @@ GEMINI_CACHE_TTL_HOURS = 24
 
 ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-2.5-flash:generateContent"
+    "models/gemini-3.1-flash-lite-preview:generateContent"
 )
 
 SPEC = QuotaSpec(

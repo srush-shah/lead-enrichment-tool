@@ -53,7 +53,7 @@ Tier · Score · Why Now · Talking Point · Draft Email
 | **WalkScore** | Urban-context proxy for apartment density | 5,000/day |
 | **Wikipedia** | Company scale proxy (notability ≈ enterprise size) | None |
 | **NewsAPI** | Last-90-day trigger events (funding, M&A, launches) | **100/day — the binding constraint** |
-| **Gemini 2.5 Flash** | Email subject + body synthesis | **250 RPD / ~9 RPM** (free-tier observed cap) |
+| **Gemini 3.1 Flash Lite** | Email subject + body synthesis | **500 RPD / 15 RPM / 250k TPM** (free-tier) |
 
 The assignment requires ≥ 2 APIs; this uses 6. The stack is deliberately
 lightweight — one FastAPI service + Postgres on Render + Vercel for the

@@ -138,13 +138,13 @@ FULL_SCORE_S3_GATE = 70      # need this to unlock Gemini drafting.
 # Free-tier budgets (batch reserves; onEdit gets the remainder).
 NEWSAPI_DAILY_CAP = 100
 NEWSAPI_BATCH_CEILING = 85
-# gemini-2.5-flash free tier is ~250 RPD / 10 RPM as of 2026-04. Some accounts
-# see tighter project-level caps (we observed `limit: 20` in a 429). Set the
-# daily cap to the documented value and a defensive 6.0s gap so the quota
-# gate actually trips before the API does.
-GEMINI_DAILY_CAP = 250
-GEMINI_BATCH_CEILING = 220
-GEMINI_MIN_GAP_SECONDS = 6.5  # 6.0s puts us right at the 10 RPM cap; 6.5s = 9.2 RPM gives jitter headroom
+# gemini-3.1-flash-lite free tier: 500 RPD / 15 RPM / 250k TPM. We don't
+# track tokens (TPM headroom is huge for our prompt sizes), only request
+# count. 4.0s would put us at the 15 RPM cap exactly; 4.5s = 13.3 RPM
+# leaves jitter headroom.
+GEMINI_DAILY_CAP = 500
+GEMINI_BATCH_CEILING = 440
+GEMINI_MIN_GAP_SECONDS = 4.5
 
 # Tier thresholds for Full Score (only applied when MPS >= skip threshold).
 TIER_A_MIN = 80

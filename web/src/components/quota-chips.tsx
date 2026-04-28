@@ -11,7 +11,7 @@ type Health = {
 };
 
 const NEWS_CAP = 100;
-const GEMINI_CAP = 250;
+const GEMINI_CAP = 500;
 
 const fetcher = (url: string) =>
   fetch(url, { cache: "no-store" }).then((r) => r.json() as Promise<Health>);
