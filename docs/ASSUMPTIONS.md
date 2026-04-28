@@ -75,8 +75,8 @@ audit the filter; nothing is silently dropped.
 | Resource | Free cap | Worst-case batch use | Reserved for onEdit | Headroom |
 |---|---|---|---|---|
 | NewsAPI | 100/day | 30 (S2 only, ~30 leads clear gate) | 15 | 55% buffer |
-| Gemini 1.5 Flash RPM | 15/min | Paced at 4.5s gap → ~13 RPM | — | 13% buffer |
-| Gemini 1.5 Flash RPD | 1,500/day | ~18 (S3 leads × 1 call for email) | 200 | 98% buffer |
+| Gemini 2.5 Flash RPM | 10/min (free tier) | Paced at 6.5s gap → ~9 RPM | — | 10% buffer |
+| Gemini 2.5 Flash RPD | 250/day (free tier observed) | ~18 (S3 leads × 1 call for email) | 30 | 88% buffer |
 | WalkScore | 5,000/day | 50 | — | negligible |
 | Census ACS | generous + 30d cache | ~20 uncached | — | negligible |
 | Census Geocoder | no official cap | 50 | — | negligible |
@@ -111,5 +111,5 @@ multi-tenant deploy is config + a sign-up flow, not a rewrite.
 | **D1** | **Single demo user** during the assessment. | Reviewers need a frictionless login, not a tenancy story. | `users` and `leads` tables are already `user_id`-keyed (`idx_leads_user_created`, `idx_leads_user_hash`); a real deploy adds sign-up + invite flows on top. |
 | **D2** | **Google OAuth + email allowlist** (`ALLOWED_EMAILS`) gates both the Auth.js `signIn` callback and the backend JWT verifier — belt and suspenders. | Prevents random Google accounts from burning the demo's free-tier quota. Reviewers see an "unverified app" interstitial because the OAuth consent screen stays in Testing mode. | Publish the OAuth consent screen; replace the allowlist with an org-domain check or SSO. |
 | **D3** | **Per-user private history** in the web app — no team views, no sharing. | One demo user means there's nothing to share. | Add a `team_id` column or row-level visibility rules; UI gets a "shared by" filter. |
-| **D4** | **CSV / TSV export is the v1 writeback path** from the web app; Sheets writeback is queued as Step 8 (Path B: HMAC-signed Apps Script `doPost` → dedicated `Web App Output` tab). | Lets the web app ship even if the Apps Script side isn't redeployed. The pilot SDRs already on Sheets keep using `onEdit` — no collision with web-app users. | Step 8 lands; "Push to Sheet" button writes to a separate tab so the pilot's `Leads` tab stays clean. |
-| **D5** | **Frontend has no automated tests.** Backend has 36 covering the engine, scoring, quota, and auth. | A manual smoke pass before recording covers the demo path; doubling the frontend budget for marginal demo value didn't pencil. | Vitest + Playwright before the first real customer — smoke tests for the BFF route handlers (auth, JWT minting, SSE proxy) take priority. |
+| **D4** | **CSV / TSV export is the v1 writeback path** from the web app. Pilot SDRs already on Sheets keep using `onEdit`; web-app users export and paste, so the two surfaces never collide on the same tab. | Avoids forcing a Sheets dependency on every web-app user. Manager / new-SDR demos work even if no shared sheet exists yet. | Direct Sheets writeback can be added later (HMAC-signed Apps Script `doPost`, or a CRM webhook once Phase 3 lands) — same engine, no scoring changes. |
+| **D5** | **Frontend has no automated tests.** Backend has 58 covering the engine, scoring, quota, auth, and the regenerate-fallback path. | A manual smoke pass before recording covers the demo path; doubling the frontend budget for marginal demo value didn't pencil. | Vitest + Playwright before the first real customer — smoke tests for the BFF route handlers (auth, JWT minting, SSE proxy) take priority. |

@@ -15,9 +15,10 @@ Apps Script, `/api/v1/*` JWT routes for the web app). Same scoring
 weights, same "Why Now" fallback chain, same `daily_usage` quota
 counters — adding the web app didn't fork any business logic, and
 SDRs on the Sheets bridge keep their workflow untouched. The web app
-exports CSV/TSV today; a "Push to Sheet" button (Path B: HMAC-signed
-Apps Script `doPost` → dedicated `Web App Output` tab) is on deck so
-both surfaces can land in the same shared sheet without colliding.
+exports CSV/TSV today, which is enough overlap with Sheets for managers
+to roll up data; if the org later wants direct Sheets writeback from
+the web app, that's a small additive step on top of the existing
+Apps Script bridge.
 
 ---
 
@@ -69,7 +70,7 @@ both surfaces can land in the same shared sheet without colliding.
 | **6–7** | **Pilot (Phase 1: Sheets)** | 2 SDRs use the Sheets bridge live; 2 control SDRs continue manual; measure reply-rate delta |
 | **8** | Iterate | Scoring/email refinements from pilot feedback; web app QA on staging |
 | **9** | **Org rollout (Phase 2: web app)** | New SDRs + managers onboard via the web app; pilot SDRs stay on the Sheets bridge they already trust. 30-min training + Loom walkthrough; office hours |
-| **10+** | Optimize & extend | Weekly metrics review; Salesforce/HubSpot trigger integration; Push-to-Sheet button so web-app users can land in the shared sheet |
+| **10+** | Optimize & extend | Weekly metrics review; Salesforce/HubSpot trigger integration; multi-touch follow-up sequences |
 
 ---
 
