@@ -4,6 +4,7 @@
 
 - **Video walkthrough:** https://drive.google.com/drive/folders/1kqFH2AYQsxoc90cX1nkuPGzvBFRGLYIj?usp=sharing
 - **Web app:** https://lead-enrichment-tool-eliseai.vercel.app/
+- **Pilot Google Sheet (Apps Script bridge, 9 AM daily cron):** https://docs.google.com/spreadsheets/d/1hB2pOwLX1GIt7Hb2nDMs6v9I1W19hIXRveJuSE-n2n0/edit?usp=sharing
 - **Backend health:** https://lead-enrichment-tool.onrender.com/health
 
 > **Access:** the web app is gated by a Google OAuth email allowlist to
