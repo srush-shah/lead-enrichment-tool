@@ -2,6 +2,7 @@
 
 ## Live Deployment
 
+- **Video walkthrough:** https://drive.google.com/drive/folders/1kqFH2AYQsxoc90cX1nkuPGzvBFRGLYIj?usp=sharing
 - **Web app:** https://lead-enrichment-tool-eliseai.vercel.app/
 - **Backend health:** https://lead-enrichment-tool.onrender.com/health
 
