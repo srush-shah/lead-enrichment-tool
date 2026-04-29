@@ -1,5 +1,19 @@
 # EliseAI GTM Engineer — Inbound Lead Enrichment Tool
 
+## Live Deployment
+
+- **Web app:** https://lead-enrichment-tool-eliseai.vercel.app/
+- **Backend health:** https://lead-enrichment-tool.onrender.com/health
+
+> **Access:** the web app is gated by a Google OAuth email allowlist to
+> protect free-tier API quotas. Please share the Google email address
+> you'd like to sign in with and I'll add it to the allowlist within a
+> few minutes. The backend `/health` endpoint is public and will
+> respond instantly once warm (Render free dynos cold-start in ~30s on
+> the first hit).
+
+---
+
 Automates the top-of-funnel SDR workflow for EliseAI: takes basic
 inbound lead info, enriches via six public APIs, scores it for
 multifamily-AI fit, and drafts a personalized outreach email — all

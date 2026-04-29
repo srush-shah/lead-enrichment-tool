@@ -54,7 +54,7 @@ Apps Script bridge.
 2. **Backtest** — run scorer over last 90 days of inbound leads; correlate score vs. actual SQL/closed-won. Tune weights if κ < 0.5.
 3. **Side-by-side blind review** — 1 senior SDR scores 50 recent leads cold; tool scores the same 50; measure agreement.
 4. **Email quality pass** — sales leader reviews 30 generated emails for tone/accuracy before pilot.
-5. **Load test** — 500 leads in one batch; confirm <10 min wall time and zero free-tier breaches (watch `cache.daily_usage` table).
+5. **Load test** — 500 leads in one batch; confirm <10 min wall time and zero free-tier breaches (watch the Postgres `daily_usage` table).
 6. **Degradation drill** — deliberately set NewsAPI key to invalid value; confirm batch completes with market-fit fallback on every lead.
 
 ---
@@ -86,7 +86,7 @@ Apps Script bridge.
 | Score wrong → reps chase bad leads | Brief shows *why* score was assigned; SDR can override; weekly weight tuning |
 | Generic-feeling emails | Assist ≠ autopilot — all emails require SDR review before send; track edit distance as quality proxy |
 | NewsAPI outage mid-batch | `quota_reserved_for_realtime` / `api_error` handling → fall back to Market-Fit anchor; batch continues |
-| Free-tier rate limit surprises | SQLite `daily_usage` counter with 85/15 batch/realtime split; Gemini 4.5s token bucket |
+| Free-tier rate limit surprises | Postgres-backed `daily_usage` counter with 85/15 batch/realtime split; Gemini 6.5s token-bucket gap (~9 RPM under the 15 RPM cap) |
 | Address-parse failures | Census Geocoder returns empty → MPS defaults cause soft-Skip with clear reason; row enters review queue |
 | Prompt injection via news content | Articles feed Gemini via structured JSON context; system prompt explicitly sets role and output format |
 

@@ -51,7 +51,7 @@ audit the filter; nothing is silently dropped.
 |---|---|---|---|
 | **S1 — Foundation** | All 50 | Census Geocoder · Census ACS · WalkScore · email-domain parse | Always run |
 | **S2 — Context** | Pre-Score ≥ 50 **AND** corporate domain | Wikipedia · NewsAPI | After S1 |
-| **S3 — Synthesis** | Full Score ≥ 70 | Gemini 1.5 Flash (JSON subject + body) | After S2 |
+| **S3 — Synthesis** | Full Score ≥ 70 | Gemini 3.1 Flash Lite (JSON subject + body) | After S2 |
 
 **Pre-Score = 0.60 × MPS + 0.25 × MarketFit + 0.15 × DomainSignal**
 (Used as the S2 gate only — not the final customer-facing score.)
